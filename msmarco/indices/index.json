@@ -5,7 +5,6 @@
       "number_of_replicas": {{ target_index_replica_shards | default(0) }},
       "knn": true,
       "refresh_interval": "-1",
-      "number_of_replicas": 0,
       "store.preload": ["vex", "veq", "vem"],
       "merge.policy.segments_per_tier": 5,
       "merge.policy.floor_segment": "1gb",
