@@ -14,7 +14,7 @@
   "search_clients": 1,
   "warmup_iterations": 100,
   "id_field_name": "_id",
-  "body": {
+  "query_body": {
         "docvalue_fields" : ["_id"],
         "stored_fields" : "_none_",
         "_source": false
