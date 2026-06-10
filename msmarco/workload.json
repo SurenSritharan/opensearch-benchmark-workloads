@@ -100,7 +100,7 @@
           "name": "prod-queries",
           "operation": {
             "name": "prod-queries",
-            "operation-type": "vector-search",
+            "operation-type": "search",
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "detailed-results": true,
             "field" : "{{ target_field_name | default('vector') }}",
