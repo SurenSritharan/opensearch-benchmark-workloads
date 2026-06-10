@@ -157,12 +157,11 @@ class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
         logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
-        # 1. Standardized defaults to match your current index configuration safely
-        self._index_name = params.get('index', 'cohere-msmarco-1024')
+        self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 1024)
         self._cache = params.get("cache", False)
-        self._top_k = params.get("k", 10)
-        self._field = params.get("field", "vector") # Matches your mapping field: 'vector'
+        self._top_k = params.get("k", 100)
+        self._field = params.get("field", "target_field")
         self._query_body = params.get("body", {})
         self._detailed_results = params.get("detailed-results", True)
         self._num_centers = params.get("num_centers", 2000)
@@ -181,31 +180,22 @@ class RandomSearchParamSource(ParamSource):
             cluster_std=self._cluster_std
         )
         query_vec = query_vec[0].tolist()
-        
-        # 2. Extract out any custom source or filtering metadata from your configuration body
-        source_filter = self._query_body.get("_source", False)
-        stored_fields_filter = self._query_body.get("stored_fields", ["_id"])
-        
-        # 3. Construct the clean final payload OpenSearch expects
-        payload = {
-            "_source": source_filter,
-            "stored_fields": stored_fields_filter,
+        query = self.generate_knn_query(query_vec)
+        query.update(self._query_body)
+        return {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
+
+    def generate_knn_query(self, query_vector):
+        print(str(self._field))
+        print(str(query_vector))
+        return {
             "query": {
                 "knn": {
                     self._field: {
-                        "vector": query_vec,
+                        "vector": query_vector,
                         "k": self._top_k
                     }
                 }
             }
-        }
-
-        # 4. Return as a standard 'search' operation contract payload
-        return {
-            "index": self._index_name, 
-            "cache": self._cache, 
-            "body": payload, 
-            "detailed-results": self._detailed_results
         }
 
 
