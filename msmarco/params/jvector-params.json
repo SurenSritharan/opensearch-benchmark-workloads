@@ -12,8 +12,7 @@
   "query_count": 10000,
   "query_clients": 1,
   "warmup_iterations": 100,
-  "id_field": "_id",
-  "num_cores": 8,
+  "id-field-name": "_id",
   "query_body": {
         "docvalue_fields" : ["_id"],
         "stored_fields" : "_none_",
@@ -21,6 +20,6 @@
   },
   "query_data_set_format": "big_ann",
   "query_data_set_path": "/datasets/msmarco/cohere_msmarco_base.fvec",
-  "neighbour_data_set_format": "big_ann",
-  "neighbour_data_set_path": "/datasets/msmarco/cohere_msmarco_indices_d1024_k10_1m.ivec"
+  "neighbors_data_set_format": "big_ann",
+  "neighbors_data_set_path": "/datasets/msmarco/cohere_msmarco_indices_d1024_k10_1m.ivec"
 }
