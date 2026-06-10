@@ -104,7 +104,13 @@
             "query_file": "/datasets/msmarco/cohere_msmarco_base.fvec",
             "ground_truth_file": "/datasets/msmarco/cohere_msmarco_indices_d1024_k10_1m.ivec",
             "k": {{ query_k | default(10) }},
-            "query_count": {{ query_count | default(10000) }}
+            "query_count": {{ query_count | default(10000) }},
+            
+            # Add these lines to map the command-line params directly to the runner
+            "calculate-recall": {{ calculate_recall | default(true) }},
+            "id_field": "{{ id_field | default('passage_id') }}",
+            "num_clients": {{ query_clients | default(1) }},
+            "num_cores": {{ num_cores | default(8) }}
           },
           "clients": {{ query_clients | default(1) }},
           "warmup-iterations": {{ warmup_iterations | default(100) }}
