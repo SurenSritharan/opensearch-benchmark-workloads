@@ -98,7 +98,7 @@
       "schedule": [
         {
           "operation": {
-            "operation-type": "search",
+            "operation-type": "msmarco-vector-search",
             "param-source": "msmarco-vector-search",
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "query_file": "/datasets/msmarco/cohere_msmarco_base.fvec",

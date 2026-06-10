@@ -265,11 +265,11 @@ class MsMarcoVectorSearchRunner:
             "success": True
         }
 
-        # 4. Extract ground truth indices injected by your partition
-        gt_indices = params.get("ground_truth_indices")
+        # FIX 1: Look for "expected_ids", which is what the Partition actually injects
+        gt_indices = params.get("expected_ids")
         k = params.get("k", len(returned_ids) if returned_ids else 10)
 
-        if gt_indices:
+        if gt_indices is not None:
             # Build evaluation sets
             true_set_at_k = set(gt_indices[:k])
             returned_set_at_k = set(returned_ids[:k])
@@ -283,13 +283,10 @@ class MsMarcoVectorSearchRunner:
             # --- RECALL@1 CALCULATION ---
             recall_at_1 = 0.0
             if len(gt_indices) > 0 and len(returned_ids) > 0:
-                # Check if the absolute top-1 match from OpenSearch is present in the ground truth
-                # Alternatively, check if OpenSearch top-1 matches the exact ground truth top-1:
                 if returned_ids[0] == gt_indices[0]:
                     recall_at_1 = 1.0
 
-            # 5. Attach the stats object using standard naming conventions
-            # OpenSearch Benchmark will average these and prefix them with "Mean " in the final CLI table
+            # FIX 2: Explicitly format stats so OSBenchmark reports them properly 
             metrics["stats"] = {
                 "recall@k": recall_at_k,
                 "recall@1": recall_at_1
