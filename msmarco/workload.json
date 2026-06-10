@@ -99,7 +99,7 @@
         {
           "operation": {
             "operation-type": "search",
-            "param-source": "msmarco-search-source",
+            "param-source": "msmarco-vector-search",
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "query_file": "/datasets/msmarco/cohere_msmarco_base.fvec",
             "ground_truth_file": "/datasets/msmarco/cohere_msmarco_indices_d1024_k10_1m.ivec",
