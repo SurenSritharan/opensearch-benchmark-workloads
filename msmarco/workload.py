@@ -190,7 +190,7 @@ class RandomSearchParamSource(ParamSource):
         return {
             "query": {
                 "knn": {
-                    self._field: {
+                    "vector": {
                         "vector": query_vector,
                         "k": self._top_k
                     }
