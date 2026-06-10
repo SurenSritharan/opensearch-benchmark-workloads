@@ -185,6 +185,8 @@ class RandomSearchParamSource(ParamSource):
         return {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
 
     def generate_knn_query(self, query_vector):
+        print(str(self._field))
+        print(str(query_vector))
         return {
             "query": {
                 "knn": {
