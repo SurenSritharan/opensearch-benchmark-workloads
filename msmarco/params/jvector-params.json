@@ -12,7 +12,6 @@
   "query_count": 10000,
   "query_clients": 1,
   "warmup_iterations": 100,
-  "calculate_recall": true,
   "id_field": "_id",
   "num_cores": 8
 }
