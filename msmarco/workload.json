@@ -125,7 +125,8 @@
                 "body": {{ query_body | default ({}) | tojson }},
                 "filter_body": {{ filter_body | default ({}) | tojson }},
                 "filter_type": {{filter_type  | default ({}) | tojson }},
-                "repetitions": {{ number_of_repetitions | default(1)}}
+                "repetitions": {{ number_of_repetitions | default(1)}},
+                "warmup_iterations": {{ warmup_iterations | default(0)}}
             },
             "clients": {{ search_clients | default(1)}}
           }
