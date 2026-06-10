@@ -13,11 +13,6 @@
   "search_clients": 1,
   "warmup_iterations": 100,
   "id_field_name": "_id",
-  "query_body": {
-        "docvalue_fields" : ["_id"],
-        "stored_fields" : "_none_",
-        "_source": false
-  },
   "query_data_set_format": "bigann",
   "query_data_set_path": "/datasets/msmarco/vectors.fbin",
   "neighbors_data_set_format": "bigann",
