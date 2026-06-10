@@ -265,7 +265,7 @@ class MsMarcoVectorSearchRunner:
             "success": True
         }
 
-        # FIX 1: Look for "expected_ids", which is what the Partition actually injects
+        # Safe extraction of ground truth IDs from the partition payload
         gt_indices = params.get("expected_ids")
         k = params.get("k", len(returned_ids) if returned_ids else 10)
 
@@ -286,11 +286,12 @@ class MsMarcoVectorSearchRunner:
                 if returned_ids[0] == gt_indices[0]:
                     recall_at_1 = 1.0
 
-            # FIX 2: Explicitly format stats so OSBenchmark reports them properly 
-            metrics["stats"] = {
-                "recall@k": recall_at_k,
-                "recall@1": recall_at_1
-            }
+            # FIX: Format stats as an array of structured metric blocks 
+            # so OSBenchmark can compute min/mean/median/max calculations.
+            metrics["stats"] = [
+                {"name": "recall@k", "value": recall_at_k, "unit": ""},
+                {"name": "recall@1", "value": recall_at_1, "unit": ""}
+            ]
             
         return metrics
 
