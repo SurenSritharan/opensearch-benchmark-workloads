@@ -10,9 +10,9 @@
   "space_type": "cosinesimil",
   "query_k": 10,
   "query_count": 10000,
-  "query_clients": 1,
+  "search_clients": 1,
   "warmup_iterations": 100,
-  "id-field-name": "_id",
+  "id_field_name": "_id",
   "query_body": {
         "docvalue_fields" : ["_id"],
         "stored_fields" : "_none_",

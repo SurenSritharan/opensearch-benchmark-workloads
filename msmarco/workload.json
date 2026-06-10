@@ -127,6 +127,7 @@
                 "filter_type": {{filter_type  | default ({}) | tojson }},
                 "repetitions": {{ number_of_repetitions | default(1)}}
               }
+              "clients": {{ search_clients | default(1)}}
             }
           ]
         }
