@@ -122,7 +122,11 @@
                 {% if oversample_factor is defined %}
                 "oversample_factor": {{ oversample_factor }},
                 {% endif %}
-                "body": {{ query_body | default ({}) | tojson }},
+                "body": {
+                      "docvalue_fields" : ["_id"],
+                      "stored_fields" : "_none_",
+                      "_source": false
+                },
                 "filter_body": {{ filter_body | default ({}) | tojson }},
                 "filter_type": {{filter_type  | default ({}) | tojson }},
                 "repetitions": {{ number_of_repetitions | default(1)}},
