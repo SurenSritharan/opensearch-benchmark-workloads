@@ -153,7 +153,7 @@ class RandomSearchParamSource(ParamSource):
         super().__init__(workload, params, **kwargs)
         logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
         self._index_name = params.get('index_name', 'target_index')
-        self._dims = params.get("dims", 768)
+        self._dims = params.get("dims", 1024)
         self._cache = params.get("cache", False)
         self._top_k = params.get("k", 100)
         self._field = params.get("field", "target_field")
@@ -194,5 +194,5 @@ class RandomSearchParamSource(ParamSource):
 
 def register(registry):
     register_runners(registry)
-    registry.register_param_source("random-vector-bulk-param-source", RandomBulkParamSource)
+    registry.register_param_source("msmarco-fvcec-bulk-source", MsMarcoFvecBulkSource)
     registry.register_param_source("random-vector-search-param-source", RandomSearchParamSource)

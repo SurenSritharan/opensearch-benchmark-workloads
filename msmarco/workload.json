@@ -36,7 +36,7 @@
           "name": "bulk-ingestion-phase",
           "operation": {
             "operation-type": "bulk",
-            "param-source": "msmarco-fvcec-bulk-source",
+            "param-source": "msmarco-fvec-bulk-source",
             "file_path": "/datasets/msmarco/cohere_msmarco_base.fvec",
             "bulk_size": 1000,
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
@@ -67,7 +67,7 @@
           "name": "bulk-ingestion-phase",
           "operation": {
             "operation-type": "bulk",
-            "param-source": "msmarco-fvcec-bulk-source",
+            "param-source": "msmarco-fvec-bulk-source",
             "file_path": "/datasets/msmarco/cohere_msmarco_base.fvec",
             "bulk_size": 1000,
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
