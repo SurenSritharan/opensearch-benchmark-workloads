@@ -5,7 +5,7 @@
   "target_index_replica_shards": 0,
   "target_index_dimension": 1024,
   "target_index_max_num_segments": 1,
-  "target_field": "vector",
+  "target_field_name": "vector",
   "engine": "jvector",
   "method_name": "disk_ann",
   "space_type": "cosinesimil",
