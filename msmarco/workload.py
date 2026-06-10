@@ -201,7 +201,7 @@ class MsMarcoSearchPartition:
             self.f.close()
             raise StopIteration
         
-        # Read query vector
+        # 1. Read query vector from the binary .fvec file
         length_bytes = self.f.read(4)
         if not length_bytes or len(length_bytes) < 4:
             self.f.close()
@@ -212,15 +212,16 @@ class MsMarcoSearchPartition:
             self.f.close()
             raise StopIteration
         
+        # Cleanly unpack the binary floats into a pure Python list of numbers
         query_vector = list(struct.unpack(f"{self.dim}f", vec_bytes))
         
-        # Build search query payload matching your mapping structure
+        # 2. Build the STRICT vector k-NN query body (No "match" query!)
         query_body = {
             "size": self.k,
             "query": {
                 "knn": {
-                    "vector": {
-                        "vector": query_vector,
+                    "vector": {              # Matches your mapping properties field name
+                        "vector": query_vector, # Pure list of floats
                         "k": self.k
                     }
                 }
@@ -229,7 +230,7 @@ class MsMarcoSearchPartition:
             "docvalue_fields": ["_id"]
         }
         
-        # Construct parameters expected by _vector_search_query_with_recall
+        # 3. Construct the output params payload for the recall runner
         result = {
             "index": self.index_name,
             "body": query_body,
@@ -241,9 +242,9 @@ class MsMarcoSearchPartition:
             "num_cores": self.source.num_cores
         }
         
-        # Inject ground truth ids mapped as string lists for validation check
+        # 4. Pull ground-truth array and map doc IDs explicitly as lists of strings
         if self.ground_truth_indices and self.current_query < len(self.ground_truth_indices):
-            # Converts [142, 592] -> ["142", "592"] because openSearch returns string ids
+            # This must be strings because OpenSearch evaluates _id matching as strings
             current_neighbors = [str(idx) for idx in self.ground_truth_indices[self.current_query]]
             result["neighbors"] = current_neighbors
             
@@ -316,6 +317,6 @@ class MsMarcoVectorSearchRunner(Runner):
         return metrics
 
 def register(registry):
+    registry.register_runners("msmarco-vector-search", MsMarcoVectorSearchRunner(), async_runner=True)
     registry.register_param_source("msmarco-fvcec-bulk-source", MsMarcoFvecBulkSource)
     registry.register_param_source("msmarco-search-source", MsMarcoSearchSource)
-    registry.register_runners("msmarco-vector-search", MsMarcoVectorSearchRunner(), async_runner=True)
