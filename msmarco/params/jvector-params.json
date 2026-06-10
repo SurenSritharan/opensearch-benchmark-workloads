@@ -13,6 +13,6 @@
   "query_clients": 1,
   "warmup_iterations": 100,
   "calculate_recall": true,
-  "id_field": "passage_id",
+  "id_field": "_id",
   "num_cores": 8
 }
