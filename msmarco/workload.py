@@ -2,7 +2,8 @@ import os
 import struct
 import time
 import multiprocessing
-from osbenchmark.workload.loader import Downloader
+from osbenchmark.worker_coordinator.runner import Runner
+
 
 class MsMarcoFvecBulkSource:
     def __init__(self, workload, params, **kwargs):
@@ -248,7 +249,73 @@ class MsMarcoSearchPartition:
             
         self.current_query += 1
         return result
+    
+class MsMarcoVectorSearchRunner(Runner):
+    """
+    Custom runner that executes queries built by MsMarcoSearchPartition,
+    and returns metrics that OpenSearch Benchmark aggregates into the summary table.
+    """
+    def __init__(self):
+        pass
+
+    async def __call__(self, es, params):
+        index_name = params["index"]
+        body = params["body"]
+        
+        # 1. Execute query
+        start_time = time.perf_counter()
+        response = await es.search(index=index_name, body=body)
+        duration = time.perf_counter() - start_time
+        
+        # 2. Extract OpenSearch internal IDs from the response
+        returned_ids = []
+        if "hits" in response and "hits" in response["hits"]:
+            for hit in response["hits"]["hits"]:
+                try:
+                    returned_ids.append(int(hit["_id"]))
+                except (ValueError, TypeError):
+                    continue
+
+        # 3. Base benchmark transaction metrics
+        metrics = {
+            "weight": 1,
+            "unit": "ops",
+            "success": True
+        }
+
+        # 4. Extract ground truth indices injected by your partition
+        gt_indices = params.get("ground_truth_indices")
+        k = params.get("k", len(returned_ids) if returned_ids else 10)
+
+        if gt_indices:
+            # Build evaluation sets
+            true_set_at_k = set(gt_indices[:k])
+            returned_set_at_k = set(returned_ids[:k])
+            
+            # --- RECALL@K CALCULATION ---
+            recall_at_k = 0.0
+            if len(true_set_at_k) > 0:
+                true_pos_k = len(true_set_at_k.intersection(returned_set_at_k))
+                recall_at_k = true_pos_k / len(true_set_at_k)
+            
+            # --- RECALL@1 CALCULATION ---
+            recall_at_1 = 0.0
+            if len(gt_indices) > 0 and len(returned_ids) > 0:
+                # Check if the absolute top-1 match from OpenSearch is present in the ground truth
+                # Alternatively, check if OpenSearch top-1 matches the exact ground truth top-1:
+                if returned_ids[0] == gt_indices[0]:
+                    recall_at_1 = 1.0
+
+            # 5. Attach the stats object using standard naming conventions
+            # OpenSearch Benchmark will average these and prefix them with "Mean " in the final CLI table
+            metrics["stats"] = {
+                "recall@k": recall_at_k,
+                "recall@1": recall_at_1
+            }
+            
+        return metrics
 
 def register(registry):
     registry.register_param_source("msmarco-fvcec-bulk-source", MsMarcoFvecBulkSource)
     registry.register_param_source("msmarco-search-source", MsMarcoSearchSource)
+    registry.register_runners("msmarco-vector-search", MsMarcoVectorSearchRunner(), async_runner=True)
