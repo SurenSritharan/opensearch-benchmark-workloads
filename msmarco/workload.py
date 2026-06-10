@@ -201,5 +201,5 @@ class RandomSearchParamSource(ParamSource):
 
 def register(registry):
     register_runners(registry)
-    registry.register_param_source("msmarco-fvcec-bulk-source", MsMarcoFvecBulkSource)
+    registry.register_param_source("msmarco-fvec-bulk-source", MsMarcoFvecBulkSource)
     registry.register_param_source("random-vector-search-param-source", RandomSearchParamSource)

@@ -108,14 +108,11 @@
             "data_set_path" : "{{ query_data_set_path }}",
             "neighbors_data_set_path" : "{{ neighbors_data_set_path }}",
             "neighbors_data_set_format" : "{{ neighbors_data_set_format | default('bigann') }}",
-            "num_vectors" : {{ query_count | default(-1) }},
+            "query_count" : {{ query_count | default(-1) }},
             "id-field-name": "{{ id_field_name | default('_id') }}",
             "repetitions": {{ number_of_repetitions | default(1) }},
-            "warmup_iterations": {{ warmup_iterations | default(0) }}
-            {%- if query_k is defined -%}, "k": {{ query_k }} {%- endif -%}
-            {%- if oversample_factor is defined -%}, "oversample_factor": {{ oversample_factor }} {%- endif -%}
-            {%- if filter_body is defined -%}, "filter_body": {{ filter_body | tojson }} {%- endif -%}
-            {%- if filter_type is defined -%}, "filter_type": {{ filter_type | tojson }} {%- endif -%}
+            "warmup_iterations": {{ warmup_iterations | default(0) }},
+            "k": {{ query_k }}
           },
           "clients": {{ search_clients | default(1) }}
         }

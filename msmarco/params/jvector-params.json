@@ -15,7 +15,7 @@
   "warmup_iterations": 100,
   "hnsw_ef_search": 100,
   "hnsw_ef_construction": 128,
-  "mode": "on_disk",
+  "mode": "in_memory",
   "query_k": 100,
   "query_body": {
         "docvalue_fields" : ["_id"],
