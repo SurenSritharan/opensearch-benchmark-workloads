@@ -1,4 +1,12 @@
 {
+  "index": "cohere-msmarco-1024",
+  "k": 10,
+  "query_count": 100000,
+  "calculate-recall": true,
+  "id_field": "passage_id",
+  "num_clients": 1,
+  "num_cores": 8,
+  
   "target_index_name": "cohere-msmarco-1024",
   "target_index_body": "indices/index.json",
   "target_index_primary_shards": 1,
@@ -9,6 +17,5 @@
   "method_name": "disk_ann",
   "space_type": "cosinesimil",
   "query_k": 10,
-  "query_count": 100000,
   "warmup_iterations": 100
 }

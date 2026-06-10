@@ -1,6 +1,8 @@
 import os
 import struct
 import time
+import multiprocessing
+from osbenchmark.workload.loader import Downloader
 
 class MsMarcoFvecBulkSource:
     def __init__(self, workload, params, **kwargs):
@@ -70,7 +72,7 @@ class MsMarcoFvecPartition:
             # Direct float extraction mapping
             vec = struct.unpack(f"{self.dim}f", vec_bytes)
             
-            # Action line mapping array
+            # Action line mapping array (Using string versions of current_doc as _id)
             body.append({"index": {"_index": self.index_name, "_id": str(self.current_doc)}})
             # Data array line mapping
             body.append({
@@ -96,8 +98,14 @@ class MsMarcoSearchSource:
         self.k = params.get("k", 10)
         self.query_count = params.get("query_count", 10000)
         
+        # Save structural parameter variables needed by internal workers
+        self.calculate_recall = params.get("calculate-recall", True)
+        self.id_field = params.get("id_field", "_id")
+        self.num_clients = params.get("num_clients", 1)
+        self.num_cores = params.get("num_cores", multiprocessing.cpu_count())
+        
         # MS MARCO query files
-        self.queries_file = "/datasets/msmarco/cohere_msmarco_base.fvec"  # Using base vectors as queries for now
+        self.queries_file = "/datasets/msmarco/cohere_msmarco_base.fvec"  
         self.dim = 1024
         self.vector_size_bytes = 4 + (self.dim * 4)
         
@@ -106,11 +114,11 @@ class MsMarcoSearchSource:
         self.ground_truth_distances = None
         
         try:
-            # Try to load ground truth data
             indices_file = "/datasets/msmarco/cohere_msmarco_indices_d1024_k10_1m.ivec"
             distances_file = "/datasets/msmarco/cohere_msmarco_distances_d1024_k10_1m.fvec"
             
             if os.path.exists(indices_file):
+                # .ivec uses 'k' or its own dimensionality constraint. We load up to k elements.
                 self.ground_truth_indices = self._load_ivec(indices_file, self.query_count, self.k)
             if os.path.exists(distances_file):
                 self.ground_truth_distances = self._load_fvec(distances_file, self.query_count, self.k)
@@ -125,11 +133,14 @@ class MsMarcoSearchSource:
                 length_bytes = f.read(4)
                 if not length_bytes:
                     break
-                vec_bytes = f.read(dim * 4)
+                # Each vector entry in ivec starts with its dimension as an integer
+                vec_dim = struct.unpack("i", length_bytes)[0]
+                vec_bytes = f.read(vec_dim * 4)
                 if not vec_bytes:
                     break
-                vec = struct.unpack(f"{dim}i", vec_bytes)
-                data.append(list(vec))
+                vec = struct.unpack(f"{vec_dim}i", vec_bytes)
+                # Slice down or up to our test 'dim' boundaries
+                data.append(list(vec[:dim]))
         return data
     
     def _load_fvec(self, filepath, num_vectors, dim):
@@ -140,11 +151,12 @@ class MsMarcoSearchSource:
                 length_bytes = f.read(4)
                 if not length_bytes:
                     break
-                vec_bytes = f.read(dim * 4)
+                vec_dim = struct.unpack("i", length_bytes)[0]
+                vec_bytes = f.read(vec_dim * 4)
                 if not vec_bytes:
                     break
-                vec = struct.unpack(f"{dim}f", vec_bytes)
-                data.append(list(vec))
+                vec = struct.unpack(f"{vec_dim}f", vec_bytes)
+                data.append(list(vec[:dim]))
         return data
     
     def partition(self, client_index, total_clients):
@@ -201,7 +213,7 @@ class MsMarcoSearchPartition:
         
         query_vector = list(struct.unpack(f"{self.dim}f", vec_bytes))
         
-        # Build search query
+        # Build search query payload matching your mapping structure
         query_body = {
             "size": self.k,
             "query": {
@@ -216,86 +228,27 @@ class MsMarcoSearchPartition:
             "docvalue_fields": ["_id"]
         }
         
+        # Construct parameters expected by _vector_search_query_with_recall
         result = {
             "index": self.index_name,
             "body": query_body,
             "cache": False,
-            "k": self.k
+            "k": self.k,
+            "calculate-recall": self.source.calculate_recall,
+            "id_field": self.source.id_field,
+            "num_clients": self.source.num_clients,
+            "num_cores": self.source.num_cores
         }
         
-        # Add ground truth if available
+        # Inject ground truth ids mapped as string lists for validation check
         if self.ground_truth_indices and self.current_query < len(self.ground_truth_indices):
-            result["expected_ids"] = self.ground_truth_indices[self.current_query]
-        if self.ground_truth_distances and self.current_query < len(self.ground_truth_distances):
-            result["expected_distances"] = self.ground_truth_distances[self.current_query]
-        
+            # Converts [142, 592] -> ["142", "592"] because openSearch returns string ids
+            current_neighbors = [str(idx) for idx in self.ground_truth_indices[self.current_query]]
+            result["neighbors"] = current_neighbors
+            
         self.current_query += 1
         return result
-
-class MsMarcoVectorSearchRunner:
-    """
-    Custom runner that executes queries built by MsMarcoSearchPartition,
-    and returns metrics that OpenSearch Benchmark aggregates into the summary table.
-    """
-    def __init__(self):
-        pass
-
-    async def __call__(self, es, params):
-        index_name = params["index"]
-        body = params["body"]
-        
-        # 1. Execute query
-        start_time = time.perf_counter()
-        response = await es.search(index=index_name, body=body)
-        duration = time.perf_counter() - start_time
-        
-        # 2. Extract OpenSearch internal IDs from the response
-        returned_ids = []
-        if "hits" in response and "hits" in response["hits"]:
-            for hit in response["hits"]["hits"]:
-                try:
-                    returned_ids.append(int(hit["_id"]))
-                except (ValueError, TypeError):
-                    continue
-
-        # 3. Base benchmark transaction metrics
-        metrics = {
-            "weight": 1,
-            "unit": "ops",
-            "success": True
-        }
-
-        # Safe extraction of ground truth IDs from the partition payload
-        gt_indices = params.get("expected_ids")
-        k = params.get("k", len(returned_ids) if returned_ids else 10)
-
-        if gt_indices is not None:
-            # Build evaluation sets
-            true_set_at_k = set(gt_indices[:k])
-            returned_set_at_k = set(returned_ids[:k])
-            
-            # --- RECALL@K CALCULATION ---
-            recall_at_k = 0.0
-            if len(true_set_at_k) > 0:
-                true_pos_k = len(true_set_at_k.intersection(returned_set_at_k))
-                recall_at_k = true_pos_k / len(true_set_at_k)
-            
-            # --- RECALL@1 CALCULATION ---
-            recall_at_1 = 0.0
-            if len(gt_indices) > 0 and len(returned_ids) > 0:
-                if returned_ids[0] == gt_indices[0]:
-                    recall_at_1 = 1.0
-
-            # FIX: Format stats as an array of structured metric blocks 
-            # so OSBenchmark can compute min/mean/median/max calculations.
-            metrics["stats"] = [
-                {"name": "recall@k", "value": recall_at_k, "unit": ""},
-                {"name": "recall@1", "value": recall_at_1, "unit": ""}
-            ]
-            
-        return metrics
 
 def register(registry):
     registry.register_param_source("msmarco-fvcec-bulk-source", MsMarcoFvecBulkSource)
     registry.register_param_source("msmarco-search-source", MsMarcoSearchSource)
-    registry.register_runner("msmarco-vector-search", MsMarcoVectorSearchRunner(), async_runner=True)
