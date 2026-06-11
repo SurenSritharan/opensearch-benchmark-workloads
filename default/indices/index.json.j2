@@ -1,0 +1,42 @@
+{# Define index-time defaults #}
+{% set target_field_name = target_field_name | default("vector") %}
+{% set target_index_primary_shards = target_index_primary_shards | default(3) %}
+{% set target_index_replica_shards = target_index_replica_shards | default(0) %}
+{% set method_name = method_name | default('disk_ann' if engine == 'jvector' else 'hnsw') %}
+{% set target_index_space_type = target_index_space_type | default("l2") %}
+
+{# Algorithmic defaults passed automatically to included engine templates #}
+{% set m = m | default(16) %}
+{% set ef_construction = ef_construction | default(100) %}
+{% set encoder_name = encoder_name | default("flat") %}
+
+{
+  "settings": {
+    "index": {
+      "knn": true,
+      "number_of_shards": {{ target_index_primary_shards | default(1) }},
+      "number_of_replicas": {{ target_index_replica_shards | default(0) }},
+      "refresh_interval": "-1",
+      "merge.policy.segments_per_tier": 5,
+      "merge.policy.floor_segment": "1gb",
+      "merge.policy.max_merged_segment": "25gb"
+    }
+  },
+  "mappings": {
+    "properties": {
+      "passage_id": { "type": "keyword" },
+      "text": { "type": "text" },
+      "vector": {
+        "type": "knn_vector",
+        "dimension": {{ target_index_dimension | default(1024) }},
+        "method": {
+          "name": "{{ method_name }}",
+          "space_type": "{{ space_type | default('cosinesimil') }}",
+          "engine": "{{ engine | default('jvector') }}",
+          {# This line now correctly pulls from your modular engine files #}
+          "parameters": {% include "indices/" ~ (engine | default('jvector')) ~ ".json.j2" %}
+        }
+      }
+    }
+  }
+}

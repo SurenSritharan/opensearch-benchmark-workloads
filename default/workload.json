@@ -1,0 +1,74 @@
+{
+  "description": "Optimized Modular Vector Benchmarking Workload",
+  "indices": [
+    {
+      "name": "{{ target_index_name | default('target_index') }}",
+      "body": "indices/index.json.j2"
+    }
+  ],
+  "test_procedures": [
+    {
+      "name": "create-index-and-load",
+      "description": "Full lifecycle: Clean, Create, Ingest, Refresh, and Merge",
+      "default": true,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "delete-index",
+            "only-if-exists": true,
+            "index": "{{ target_index_name | default('target_index') }}"
+          }
+        },
+        {
+          "operation": {
+            "operation-type": "create-index",
+            "index": "{{ target_index_name | default('target_index') }}"
+          }
+        },
+        {
+          "name": "bulk-ingestion-phase",
+          "operation": {
+            "operation-type": "bulk",
+            "param-source": "vector-file-bulk-source",
+            "file_path": "{{ file_path }}",
+            "bulk_size": {{ bulk_size | default(1000) }},
+            "index": "{{ target_index_name | default('target_index') }}"
+          },
+          "clients": {{ ingestion_clients | default(8) }}
+        },
+        {
+          "operation": {
+            "operation-type": "refresh",
+            "index": "{{ target_index_name | default('target_index') }}"
+          }
+        },
+        {
+          "operation": {
+            "operation-type": "force-merge",
+            "index": "{{ target_index_name | default('target_index') }}",
+            "max-num-segments": {{ target_index_max_num_segments | default(1) }}
+          }
+        }
+      ]
+    },
+    {
+      "name": "vector-search",
+      "description": "Perform vector search on indexed cluster",
+      "default": false,
+      "schedule": [
+        {
+          "name": "prod-queries",
+          "operation": {
+            "operation-type": "vector-search",
+            "param-source": "random-vector-search-param-source",
+            "index_name": "{{ target_index_name | default('target_index') }}",
+            "k": {{ query_k | default(10) }},
+            "body": {{ query_body | default({}) | tojson }}
+          },
+          "clients": {{ search_clients | default(1) }},
+          "iterations": 1000
+        }
+      ]
+    }
+  ]
+}

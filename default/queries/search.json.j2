@@ -1,0 +1,29 @@
+{# 1. Define query-time defaults #}
+{% set target_field_name = target_field_name | default("vector") %}
+{% set k = k | default(10) %}
+{% set ef_search = ef_search | default(100) %}
+{% set nprobe = nprobe | default(1) %}
+
+{
+  "size": {{ k }},
+  {% if _source is defined %}
+  "_source": {{ _source | tojson }},
+  {% endif %}
+  {% if stored_fields is defined %}
+  "stored_fields": {{ stored_fields | tojson }},
+  {% endif %}
+  {% if docvalue_fields is defined %}
+  "docvalue_fields": {{ docvalue_fields | tojson }},
+  {% endif %}
+  "query": {
+    "knn": {
+      "{{ target_field_name }}": {
+        "vector": {{ query_vector }},
+        "k": {{ k }}
+        {% if engine in ["lucene", "nmslib", "faiss", "jvector"] %}
+        , "method_parameters": {% include "queries/engines/" ~ engine ~ ".json.j2" %}
+        {% endif %}
+      }
+    }
+  }
+}
