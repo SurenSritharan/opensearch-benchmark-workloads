@@ -78,7 +78,7 @@
           "name": "refresh-index",
           "operation": {
             "operation-type": "refresh",
-            "index": "{{ target_index_name | default('target_index') }}"
+            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
           }
         },
         {
@@ -100,6 +100,21 @@
         {
           "operation": {
             "operation-type": "force-merge",
+            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
+            "max-num-segments": {{ target_index_max_num_segments | default(1) }},
+            "request-timeout": 7200
+          }
+        }
+      ]
+    },
+    {
+      "name": "refresh",
+      "description": "Refresh indexs",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "refresh",
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "max-num-segments": {{ target_index_max_num_segments | default(1) }},
             "request-timeout": 7200
