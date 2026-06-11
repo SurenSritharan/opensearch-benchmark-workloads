@@ -128,7 +128,7 @@
     },
     {
       "name": "search",
-      "default": true,
+      "default": false,
       "description": "Perform only vector search on previously indexed cluster, skipping warmup-indices task.",
       "schedule": [
         {
