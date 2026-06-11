@@ -5,7 +5,6 @@
       "number_of_replicas": {{ target_index_replica_shards | default(0) }},
       "knn": true,
       "refresh_interval": "-1",
-      "store.preload": ["vex", "veq", "vem"],
       "merge.policy.segments_per_tier": 5,
       "merge.policy.floor_segment": "1gb",
       "merge.policy.max_merged_segment": "25gb"
@@ -23,8 +22,9 @@
           "space_type": "{{ space_type | default('cosinesimil') }}",
           "engine": "{{ engine | default('jvector') }}",
           "parameters": {
-            "ef_construction": {{ ef_construction | default(128) }},
-            "m": {{ m | default(16) }}
+            "ef_search": {{ ef_search | default(16)}}
+            "ef_construction": {{ hnsw_ef_construction | default(128) }},
+            "m": {{ hnsw_m | default(16) }}
           }
         }
       }
