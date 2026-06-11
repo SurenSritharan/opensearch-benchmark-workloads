@@ -113,47 +113,6 @@ def _get_cluster_centers(dims, num_centers, seed=42):
         _cluster_centers = rng.rand(num_centers, dims).astype('float32') * 100
     return _cluster_centers
 
-
-class RandomBulkParamSource(ParamSource):
-    def __init__(self, workload, params, **kwargs):
-        super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
-        self._bulk_size = params.get("bulk-size", 100)
-        self._index_name = params.get('index_name', 'target_index')
-        self._field = params.get("field", "target_field")
-        self._dims = params.get("dims", 768)
-        self._partitions = params.get("partitions", 1000)
-        self._num_centers = params.get("num_centers", 2000)
-        self._cluster_std = params.get("cluster_std", 0.5)
-        self._centers = _get_cluster_centers(self._dims, self._num_centers)
-
-    def partition(self, partition_index, total_partitions):
-        return self
-
-    def params(self):
-        bulk_data = []
-        vectors, _ = make_blobs(
-            n_samples=self._bulk_size,
-            n_features=self._dims,
-            centers=self._centers,
-            cluster_std=self._cluster_std
-        )
-        for i in range(self._bulk_size):
-            partition_id = random.randint(0, self._partitions)
-            metadata = {"_index": self._index_name}
-            bulk_data.append({"create": metadata})
-            bulk_data.append({"partition_id": partition_id, self._field: vectors[i].tolist()})
-
-        return {
-            "body": bulk_data,
-            "bulk-size": self._bulk_size,
-            "action-metadata-present": True,
-            "unit": "docs",
-            "index": self._index_name,
-            "type": "",
-        }
-
-
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
@@ -200,8 +159,8 @@ class RandomSearchParamSource(ParamSource):
         }
 
     def generate_knn_query(self, query_vector):
-        print(str(self._field))
-        print(str(query_vector))
+        # print(str(self._field))
+        # print(str(query_vector))
         return {
             "query": {
                 "knn": {
