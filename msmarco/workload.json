@@ -116,7 +116,7 @@
             "k": {{ query_k }},
             "method_name": "{{ method_name | default('disk_ann') }}",
             "engine": "{{ engine | default('jvector') }}",
-            "space_type": "{{ space_type | default('cosinesimil\') }}",
+            "space_type": "{{ space_type | default('cosinesimil') }}",
             "body": "{{ query_body | default({}) | to_nice_json }}"
             },
           "clients": {{ search_clients | default(1) }},
