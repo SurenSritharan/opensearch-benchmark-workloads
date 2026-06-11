@@ -73,6 +73,27 @@
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
           },
           "clients": 8
+        },
+        {
+          "operation": {
+            "operation-type": "refresh",
+            "index": "{{ target_index_name | default('target_index') }}"
+          }
+        },
+        {
+          "name": "force-merge",
+          "description": "Force merge index to specified number of segments",
+          "default": false,
+          "schedule": [
+            {
+              "operation": {
+                "operation-type": "force-merge",
+                "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
+                "max-num-segments": {{ target_index_max_num_segments | default(1) }},
+                "request-timeout": 7200
+              }
+            }
+          ]
         }
       ]
     },
@@ -97,9 +118,9 @@
       "description": "Perform only vector search on previously indexed cluster, skipping warmup-indices task.",
       "schedule": [
         {
-          "name": "prod-queries",
+          "name": "vector-search-prod-queries",
           "operation": {
-            "name": "prod-queries",
+            "name": "vector-search-prod-queries",
             "operation-type": "vector-search",
             "param-source": "random-vector-search-param-source",
             "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
@@ -132,9 +153,9 @@
       "description": "Perform only vector search on previously indexed cluster, skipping warmup-indices task.",
       "schedule": [
         {
-          "name": "prod-queries",
+          "name": "search-prod-queries",
           "operation": {
-            "name": "prod-queries",
+            "name": "search-prod-queries",
             "operation-type": "search",
             "param-source": "random-vector-search-param-source",
             "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
