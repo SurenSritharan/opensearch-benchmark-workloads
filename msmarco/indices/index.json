@@ -22,7 +22,7 @@
           "space_type": "{{ space_type | default('cosinesimil') }}",
           "engine": "{{ engine | default('jvector') }}",
           "parameters": {
-            "ef_search": {{ ef_search | default(16)}}
+            "ef_search": {{ ef_search | default(16)}},
             "ef_construction": {{ hnsw_ef_construction | default(128) }},
             "m": {{ hnsw_m | default(16) }}
           }
