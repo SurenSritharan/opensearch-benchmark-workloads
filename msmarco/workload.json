@@ -100,7 +100,7 @@
           "name": "prod-queries",
           "operation": {
             "name": "prod-queries",
-            "operation-type": "vector-search",
+            "operation-type": "knn-recall",
             "param-source": "random-vector-search-param-source",
             "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "detailed-results": true,
