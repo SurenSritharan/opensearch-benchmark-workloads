@@ -10,6 +10,7 @@ import random
 import numpy as np
 from sklearn.datasets import make_blobs
 import logging
+import json
 
 class MsMarcoFvecBulkSource:
     def __init__(self, workload, params, **kwargs):
@@ -162,7 +163,15 @@ class RandomSearchParamSource(ParamSource):
         self._cache = params.get("cache", False)
         self._top_k = params.get("k", 100)
         self._field = params.get("field", "target_field")
-        self._query_body = params.get("body", {})
+        body_param = params.get("body", {})
+        if isinstance(body_param, str):
+            try:
+                self._query_body = json.loads(body_param) if body_param.strip() else {}
+            except json.JSONDecodeError:
+                logging.getLogger(__name__).warning("Failed to decode 'body' param as JSON string. Falling back to empty dict.")
+                self._query_body = {}
+        else:
+            self._query_body = body_param
         self._detailed_results = params.get("detailed-results", True)
         self._num_centers = params.get("num_centers", 2000)
         self._cluster_std = params.get("cluster_std", 0.5)
@@ -182,7 +191,13 @@ class RandomSearchParamSource(ParamSource):
         query_vec = query_vec[0].tolist()
         query = self.generate_knn_query(query_vec)
         query.update(self._query_body)
-        return {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
+        return {
+            "index": self._index_name, 
+            "cache": self._cache, 
+            "size": self._top_k, 
+            "body": query, 
+            "detailed-results": self._detailed_results
+        }
 
     def generate_knn_query(self, query_vector):
         print(str(self._field))
