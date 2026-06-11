@@ -118,6 +118,7 @@
             "engine": "{{ engine | default('jvector') }}",
             "space_type": "{{ space_type | default('cosinesimil') }}",
             "body": "{{ query_body | default({}) | safe }}"
+            "mode": "{{ mode | default('in_memory') }}"
             },
           "clients": {{ search_clients | default(1) }},
           "warmup-iterations": {{ warmup_iterations | default(0) }},
