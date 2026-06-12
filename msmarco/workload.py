@@ -121,7 +121,7 @@ def _get_cluster_centers(dims, num_centers, seed=42):
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
+        logging.getLogger(__name__).info("Workload: [%s], params: %s", workload, params)
         self._workload = workload
         self._params = params
         
@@ -157,11 +157,11 @@ class RandomSearchParamSource(ParamSource):
         return body_param
 
     def partition(self, partition_index, total_partitions):
-        new_source = self.__class__(self._workload, self._params)
-        new_source._data = self._data
-        new_source._ground_truth = self._ground_truth
-        new_source._rng = np.random.RandomState(42 + partition_index)
-        return new_source
+        partition = super().partition(partition_index, total_partitions)
+        partition._data = self._data
+        partition._ground_truth = self._ground_truth
+        partition._rng = np.random.RandomState(42 + partition_index)
+        return partition
 
     # def params(self):
     #     query_idx = self._rng.randint(0, self._num_queries)
