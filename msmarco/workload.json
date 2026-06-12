@@ -180,6 +180,7 @@
             "query_count": {{ query_count | default(-1) }},
             "id-field-name": "{{ id_field_name | default('_id') }}",
             "repetitions": {{ number_of_repetitions | default(1) }},
+            "ef_search": {{ ef_search | default(32) }},
             "dims": {{ target_index_dimension | default(1024) }},
             "k": {{ query_k }},
             "method_name": "{{ method_name | default('disk_ann') }}",
