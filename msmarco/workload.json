@@ -165,7 +165,7 @@
                     }
                 }
               }
-            }
+            },
             "mode": "{{ mode | default('in_memory') }}"
             },
           "clients": {{ search_clients | default(1) }},
