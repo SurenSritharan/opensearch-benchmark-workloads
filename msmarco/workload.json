@@ -89,8 +89,8 @@
                 "max-num-segments": {{ target_index_max_num_segments | default(1) }},
                 "request-timeout": 7200
               }
-          }
-        ]
+        }
+      ]
     },
     {
       "name": "force-merge",
