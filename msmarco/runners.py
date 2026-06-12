@@ -19,7 +19,7 @@ def register(registry):
     registry.register_runner(
         WarmupIndicesRunner.RUNNER_NAME, Retry(WarmupIndicesRunner(), retry_until_success=True), async_runner=True
     )
-    registry.register_runner(operation_type=workload.OperationType.VectorSearch, runner=Query(), async_runner=True)
+    registry.register_runner("vector-search", operation_type=workload.OperationType.VectorSearch, runner=Query(), async_runner=True)
 
 request_context_holder = RequestContextHolder()
 
