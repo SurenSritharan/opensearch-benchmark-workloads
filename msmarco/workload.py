@@ -230,20 +230,20 @@ class RandomSearchParamSource(ParamSource):
     #         "detailed-results": self._detailed_results  # Cleaned up the duplicate declaration
     #     }
 
-    # def generate_knn_query(self, query_vector):
-    #     return {
-    #         "query": {
-    #             "knn": {
-    #                 self._field: {
-    #                     "vector": query_vector,
-    #                     "k": self._top_k,
-    #                     "method_parameters": {
-    #                        "ef_search": 128
-    #                     }
-    #                 }
-    #             }
-    #         }
-    #     }
+    def generate_knn_query(self, query_vector):
+        return {
+            "query": {
+                "knn": {
+                    self._field: {
+                        "vector": query_vector,
+                        "k": self._top_k,
+                        "method_parameters": {
+                           "ef_search": 128
+                        }
+                    }
+                }
+            }
+        }
     
     def params(self):
         query_idx = self._rng.randint(0, self._num_queries)
