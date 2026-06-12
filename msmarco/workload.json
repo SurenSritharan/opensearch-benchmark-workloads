@@ -132,6 +132,7 @@
           "operation": {
             "name": "vector-search-prod-queries",
             "operation-type": "vector-search",
+            "param-source": "random-vector-search-param-source",
             "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "detailed-results": true,
             "field": "{{ target_field_name | default('vector') }}",
@@ -149,7 +150,7 @@
             "method_name": "{{ method_name | default('disk_ann') }}",
             "engine": "{{ engine | default('jvector') }}",
             "space_type": "{{ space_type | default('cosinesimil') }}",
-            "body": {{ query_body | default({}) | tojson }},
+            "body": "{{ query_body | default({}) | safe }}",
             "mode": "{{ mode | default('in_memory') }}"
             },
           "clients": {{ search_clients | default(1) }},
