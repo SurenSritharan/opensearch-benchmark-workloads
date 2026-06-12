@@ -123,6 +123,7 @@ class RandomSearchParamSource(ParamSource):
         self._top_k = params.get("k", 10)
         self._field = params.get("field", "target_field")
         self._ground_truth_file = params.get("ground_truth_file", "")
+        self._vector_file = params.get("vector_file")
         self._current_idx = -1
         self._record_size = 1 + self._dims # 1 int header + 1024 floats
         
@@ -130,7 +131,7 @@ class RandomSearchParamSource(ParamSource):
         self._rng = np.random.RandomState(42)
         
         # 2. Memory-map the dataset for streaming
-        self._data = np.memmap('cohere_msmarco_base.fvec', dtype='float32', mode='r')
+        self._data = np.memmap(self._vector_file, dtype='float32', mode='r')
         
         # 3. Load ground truth for recall calculations
         # Using memmap here too is efficient for 10k+ rows
