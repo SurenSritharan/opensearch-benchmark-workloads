@@ -1,15 +1,10 @@
 import os
 import struct
-import time
-import multiprocessing
 from osbenchmark.worker_coordinator.runner import Runner
 from osbenchmark.workload.params import ParamSource
-import logging
 from .runners import register as register_runners
-import random
 import numpy as np
 from sklearn.datasets import make_blobs
-import logging
 import json
 import copy
 
@@ -104,21 +99,6 @@ class MsMarcoFvecPartition:
             "action-metadata-present": True,
             "body": body
         }
-
-# Why fixed seed (42)?
-# - Ensures all parallel processes/clients generate vectors from the same cluster structure
-# - Critical when running with multiple indexing clients (e.g., 200 processes for 1B docs)
-_cluster_centers = None
-
-
-def _get_cluster_centers(dims, num_centers, seed=42):
-    """Generate and cache cluster centers so all processes use the same centers."""
-    global _cluster_centers
-    if _cluster_centers is None or _cluster_centers.shape != (num_centers, dims):
-        rng = np.random.RandomState(seed)
-        _cluster_centers = rng.rand(num_centers, dims).astype('float32') * 100
-    return _cluster_centers
-
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
