@@ -119,22 +119,21 @@ class RandomSearchParamSource(ParamSource):
         logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
         self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 1024)
-        self._cache = params.get("cache", False)
         self._top_k = params.get("k", 10)
         self._field = params.get("field", "target_field")
-        self._ground_truth_file = params.get("ground_truth_file", "")
-        self._vector_file = params.get("vector_file")
-        self._current_idx = -1
-        self._record_size = 1 + self._dims # 1 int header + 1024 floats
+        self._vector_file = params.get("vector_file", "cohere_msmarco_base.fvec")
         
-        # 1. Initialize fixed-seed generator for reproducibility
+        # Correctly account for header (4 bytes) + vector (dims * 4 bytes)
+        self._record_size_bytes = 4 + (self._dims * 4) 
+        
+        # 1. Map as raw bytes (uint8) to avoid the alignment error
+        self._data = np.memmap(self._vector_file, dtype='uint8', mode='r')
+        
+        # 2. Fixed-seed generator
         self._rng = np.random.RandomState(42)
         
-        # 2. Memory-map the dataset for streaming
-        self._data = np.memmap(self._vector_file, dtype='float32', mode='r')
-        
-        # 3. Load ground truth for recall calculations
-        # Using memmap here too is efficient for 10k+ rows
+        # 3. Handle Ground Truth (keeping this separate)
+        self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
         self._ground_truth = np.fromfile(self._ground_truth_file, dtype='int32').reshape(-1, 10)
         self._num_queries = len(self._ground_truth)
         
@@ -191,7 +190,6 @@ class RandomSearchParamSource(ParamSource):
         query.update(self._query_body)
         return {
             "index": self._index_name, 
-            "cache": self._cache, 
             "size": self._top_k, 
             "body": query, 
             "detailed-results": self._detailed_results
