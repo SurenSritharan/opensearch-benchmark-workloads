@@ -117,78 +117,62 @@ class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
         logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
-        self._workload = workload  # For parititoning
-        self._params = params      # For partitioning
+        self._workload = workload
+        self._params = params
+        
         self._index_name = params.get('index_name', 'target_index')
-        self._dims = params.get("dims", 1024)
-        self._top_k = params.get("k", 10)
+        self._dims = int(params.get("dims", 1024))
+        self._top_k = int(params.get("k", 10))
         self._field = params.get("field", "target_field")
         self._vector_file = params.get("vector_file", "cohere_msmarco_base.fvec")
         
-        # Correctly account for header (4 bytes) + vector (dims * 4 bytes)
-        self._record_size_bytes = 4 + (self._dims * 4) 
+        # .fvec format: 4 bytes (int32) for dimension + (dims * 4) bytes for float32 data
+        self._record_size_bytes = 4 + (self._dims * 4)
         
-        # 1. Map as raw bytes (uint8) to avoid the alignment error
+        # Memory-map as uint8 for raw byte access
         self._data = np.memmap(self._vector_file, dtype='uint8', mode='r')
         
-        # 2. Fixed-seed generator
-        self._rng = np.random.RandomState(42)
-        
-        # 3. Handle Ground Truth (keeping this separate)
+        # Ground truth
         self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
         self._ground_truth = np.fromfile(self._ground_truth_file, dtype='int32').reshape(-1, 10)
         self._num_queries = len(self._ground_truth)
         
-        
-        body_param = params.get("body", {})
+        # RNG and other state
+        self._rng = np.random.RandomState(42)
+        self._query_body = self._parse_body(params.get("body", {}))
+        self._detailed_results = params.get("detailed-results", True)
+
+    def _parse_body(self, body_param):
         if isinstance(body_param, str):
             try:
-                self._query_body = json.loads(body_param) if body_param.strip() else {}
+                return json.loads(body_param) if body_param.strip() else {}
             except json.JSONDecodeError:
-                logging.getLogger(__name__).warning("Failed to decode 'body' param as JSON string. Falling back to empty dict.")
-                self._query_body = {}
-        else:
-            self._query_body = body_param
-        self._detailed_results = params.get("detailed-results", True)
-        self._num_centers = params.get("num_centers", 2000)
-        self._cluster_std = params.get("cluster_std", 0.5)
-        self._centers = _get_cluster_centers(self._dims, self._num_centers)
+                return {}
+        return body_param
 
     def partition(self, partition_index, total_partitions):
-        # 1. Create a new instance (the 'lightweight' approach)
         new_source = self.__class__(self._workload, self._params)
-        
-        # 2. Reuse the existing memmap (no extra RAM usage)
         new_source._data = self._data
-        
-        # 3. Assign a unique seed per worker to ensure diversity in load
-        new_source._rng = np.random.RandomState(42 + partition_index)
-        
-        # 4. Copy the ground truth (shallow copy is safe as it's read-only)
         new_source._ground_truth = self._ground_truth
-        
+        new_source._rng = np.random.RandomState(42 + partition_index)
         return new_source
 
     def params(self):
-        # Generate query vector from the same cluster distribution
-        # query_vec, _ = make_blobs(
-        #     n_samples=1,
-        #     n_features=self._dims,
-        #     centers=self._centers,
-        #     cluster_std=self._cluster_std
-        # )
-        # replaced with actual query from file
-        
-        # Random query index from the total number of queries 
         query_idx = self._rng.randint(0, self._num_queries)
         
-        # 2. Stream the vector from disk
-        start = query_idx * self._record_size + 1
-        query_vec = self._data[start : start + self._dims]
+        # Calculate start: Skip the 4-byte header of the chosen record
+        start_byte = query_idx * self._record_size_bytes + 4
+        end_byte = start_byte + (self._dims * 4)
         
-        query_vec = query_vec[0].tolist()
+        # Extract raw bytes and interpret as float32
+        raw_vec = self._data[start_byte : end_byte].view(np.float32)
+        
+        # Force list conversion (essential for JSON serialization)
+        query_vec = raw_vec.tolist()
+        
         query = self.generate_knn_query(query_vec)
         query.update(self._query_body)
+        
         return {
             "index": self._index_name, 
             "size": self._top_k, 
@@ -197,15 +181,11 @@ class RandomSearchParamSource(ParamSource):
         }
 
     def generate_knn_query(self, query_vector):
-        # print(str(self._field))
-        # print(str(query_vector))
         return {
-            "query": {
-                "knn": {
-                    self._field: {
-                        "vector": query_vector,
-                        "k": self._top_k
-                    }
+            "knn": {
+                self._field: {
+                    "vector": query_vector,
+                    "k": self._top_k
                 }
             }
         }
