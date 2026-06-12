@@ -117,6 +117,8 @@ class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
         logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
+        self._workload = workload  # For parititoning
+        self._params = params      # For partitioning
         self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 1024)
         self._top_k = params.get("k", 10)
