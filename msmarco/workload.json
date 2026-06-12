@@ -132,6 +132,7 @@
           "operation": {
             "name": "vector-search-prod-queries",
             "operation-type": "vector-search",
+            "param-source": "random-vector-search-param-source",
             "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "detailed-results": true,
             "expected-output": {
