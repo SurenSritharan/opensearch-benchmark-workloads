@@ -7,9 +7,9 @@
 import logging
 
 from opensearchpy.exceptions import ConnectionTimeout
-from osbenchmark.worker_coordinator.runner import Retry, Runner
+from osbenchmark.worker_coordinator.runner import Retry, Runner, Query
 from osbenchmark.client import RequestContextHolder
-
+from osbenchmark import workload
 from osbenchmark.utils.parse import parse_int_parameter, parse_string_parameter
 
 
@@ -19,7 +19,7 @@ def register(registry):
     registry.register_runner(
         WarmupIndicesRunner.RUNNER_NAME, Retry(WarmupIndicesRunner(), retry_until_success=True), async_runner=True
     )
-    registry.register_runner("logging-knn-queries", LoggingSearchRunner(), async_runner=True)
+    registry.register_runner(operation_type=workload.OperationType.VectorSearch, runner=Query(), async_runner=True)
 
 request_context_holder = RequestContextHolder()
 
