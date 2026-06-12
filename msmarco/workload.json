@@ -146,6 +146,7 @@
             "data_set_format": "{{ query_data_set_format | default('bigann') }}",
             "data_set_path": "{{ query_data_set_path }}",
             "ground_truth_file": "{{ ground_truth_file }}",
+            "calculate-recall": true,
             "vector_file": "{{ vector_file }}",
             "neighbors_data_set_path": "{{ neighbors_data_set_path }}",
             "neighbors_data_set_format": "{{ neighbors_data_set_format | default('bigann') }}",
