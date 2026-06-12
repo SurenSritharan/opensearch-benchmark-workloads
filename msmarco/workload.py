@@ -177,12 +177,49 @@ class RandomSearchParamSource(ParamSource):
             "index": self._index_name, 
             "size": self._top_k, 
             "body": query, 
-            "detailed-results": self._detailed_results,
-            "neighbors": self._ground_truth[query_idx], 
-            "detailed-results": self._detailed_results,
-            "calculate-recall": True
-        
+            "detailed-results": self._detailed_results
         }
+
+    def generate_knn_query(self, query_vector):
+        return {
+            "knn": {
+                self._field: {
+                    "vector": query_vector,
+                    "k": self._top_k
+                }
+            }
+        }
+        
+class RandomVectorSearchParamSource(ParamSource):
+    def __init__(self, workload, params, **kwargs):
+        super().__init__(workload, params, **kwargs)
+        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
+        self._index_name = params.get('index_name', 'target_index')
+        self._dims = params.get("dims", 768)
+        self._cache = params.get("cache", False)
+        self._top_k = params.get("k", 100)
+        self._field = params.get("field", "target_field")
+        self._query_body = params.get("body", {})
+        self._detailed_results = params.get("detailed-results", False)
+        self._num_centers = params.get("num_centers", 2000)
+        self._cluster_std = params.get("cluster_std", 0.5)
+        self._centers = _get_cluster_centers(self._dims, self._num_centers)
+
+    def partition(self, partition_index, total_partitions):
+        return self
+
+    def params(self):
+        # Generate query vector from the same cluster distribution
+        query_vec, _ = make_blobs(
+            n_samples=1,
+            n_features=self._dims,
+            centers=self._centers,
+            cluster_std=self._cluster_std
+        )
+        query_vec = query_vec[0].tolist()
+        query = self.generate_knn_query(query_vec)
+        query.update(self._query_body)
+        return {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
 
     def generate_knn_query(self, query_vector):
         return {
@@ -200,4 +237,4 @@ class RandomSearchParamSource(ParamSource):
 def register(registry):
     register_runners(registry)
     registry.register_param_source("msmarco-fvec-bulk-source", MsMarcoFvecBulkSource)
-    registry.register_param_source("random-vector-search-param-source", RandomSearchParamSource)
+    registry.register_param_source("random-vector-search-param-source", RandomVectorSearchParamSource)
