@@ -177,6 +177,8 @@ class RandomSearchParamSource(ParamSource):
             "index": self._index_name, 
             "size": self._top_k, 
             "body": query, 
+            "detailed-results": self._detailed_results,
+            "neighbors": self._ground_truth[query_idx], 
             "detailed-results": self._detailed_results
         }
 
