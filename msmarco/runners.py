@@ -19,6 +19,7 @@ def register(registry):
     registry.register_runner(
         WarmupIndicesRunner.RUNNER_NAME, Retry(WarmupIndicesRunner(), retry_until_success=True), async_runner=True
     )
+    registry.register_runner("logging-knn-queries", LoggingSearchRunner())
 
 request_context_holder = RequestContextHolder()
 
@@ -45,3 +46,20 @@ class WarmupIndicesRunner(Runner):
 
     def __repr__(self, *args, **kwargs):
         return self.RUNNER_NAME
+
+
+class LoggingSearchRunner(Runner):
+    def __call__(self, es, params):
+        # 1. Execute search
+        response = es.search(index=params["index"], body=params["body"])
+        
+        # 2. Extract hits and the query_id you tracked
+        hits = [hit['_id'] for hit in response['hits']['hits']]
+        query_id = params["body"]["metadata"]["query_id"]
+        
+        # 3. Log to a simple file (this is very fast)
+        with open("search_results.log", "a") as f:
+            # Format: query_id,hit1,hit2,hit3...
+            f.write(f"{query_id},{','.join(map(str, hits))}\n")
+            
+        return response
