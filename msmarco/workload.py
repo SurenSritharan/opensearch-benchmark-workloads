@@ -170,7 +170,6 @@ class RandomSearchParamSource(ParamSource):
         return new_source
 
     def params(self):
-        self._current_idx = (self._current_idx + 1) % 10000
         # Generate query vector from the same cluster distribution
         # query_vec, _ = make_blobs(
         #     n_samples=1,
