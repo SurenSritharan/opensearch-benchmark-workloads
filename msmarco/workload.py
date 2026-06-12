@@ -37,7 +37,7 @@ class MsMarcoFvecPartition:
         self.index_name = source.index_name
         self.vector_size_bytes = source.vector_size_bytes
         self.dim = source.dim
-        self.infinite = False  
+        self.infinite = False
         
         # Parallel slice math
         docs_per_client = source.total_docs // total_clients
@@ -120,8 +120,24 @@ class RandomSearchParamSource(ParamSource):
         self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 1024)
         self._cache = params.get("cache", False)
-        self._top_k = params.get("k", 100)
+        self._top_k = params.get("k", 10)
         self._field = params.get("field", "target_field")
+        self._ground_truth_file = params.get("ground_truth_file", "")
+        self._current_idx = -1
+        self._record_size = 1 + self._dims # 1 int header + 1024 floats
+        
+        # 1. Initialize fixed-seed generator for reproducibility
+        self._rng = np.random.RandomState(42)
+        
+        # 2. Memory-map the dataset for streaming
+        self._data = np.memmap('cohere_msmarco_base.fvec', dtype='float32', mode='r')
+        
+        # 3. Load ground truth for recall calculations
+        # Using memmap here too is efficient for 10k+ rows
+        self._ground_truth = np.fromfile(self._ground_truth_file, dtype='int32').reshape(-1, 10)
+        self._num_queries = len(self._ground_truth)
+        
+        
         body_param = params.get("body", {})
         if isinstance(body_param, str):
             try:
@@ -137,16 +153,38 @@ class RandomSearchParamSource(ParamSource):
         self._centers = _get_cluster_centers(self._dims, self._num_centers)
 
     def partition(self, partition_index, total_partitions):
-        return self
+        # 1. Create a new instance (the 'lightweight' approach)
+        new_source = self.__class__(self._workload, self._params)
+        
+        # 2. Reuse the existing memmap (no extra RAM usage)
+        new_source._data = self._data
+        
+        # 3. Assign a unique seed per worker to ensure diversity in load
+        new_source._rng = np.random.RandomState(42 + partition_index)
+        
+        # 4. Copy the ground truth (shallow copy is safe as it's read-only)
+        new_source._ground_truth = self._ground_truth
+        
+        return new_source
 
     def params(self):
+        self._current_idx = (self._current_idx + 1) % 10000
         # Generate query vector from the same cluster distribution
-        query_vec, _ = make_blobs(
-            n_samples=1,
-            n_features=self._dims,
-            centers=self._centers,
-            cluster_std=self._cluster_std
-        )
+        # query_vec, _ = make_blobs(
+        #     n_samples=1,
+        #     n_features=self._dims,
+        #     centers=self._centers,
+        #     cluster_std=self._cluster_std
+        # )
+        # replaced with actual query from file
+        
+        # Random query index from the total number of queries 
+        query_idx = self._rng.randint(0, self._num_queries)
+        
+        # 2. Stream the vector from disk
+        start = query_idx * self._record_size + 1
+        query_vec = self._data[start : start + self._dims]
+        
         query_vec = query_vec[0].tolist()
         query = self.generate_knn_query(query_vec)
         query.update(self._query_body)

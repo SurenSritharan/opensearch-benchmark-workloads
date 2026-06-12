@@ -14,12 +14,12 @@
   "search_clients": 1,
   "warmup_iterations": 100,
   "mode": "in_memory",
-  "query_k": 100,
   "query_body": {
         "docvalue_fields" : ["_id"],
         "stored_fields" : "_none_",
         "_source": false
   },
+  "ground_truth_file": "/datasets/msmarco/cohere_msmarco_indices_d1024_k10_1m.ivec",
   "query_data_set_format": "bigann",
   "query_data_set_path": "/datasets/msmarco/vectors.fbin",
   "neighbors_data_set_format": "bigann",
