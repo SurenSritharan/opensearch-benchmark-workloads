@@ -182,10 +182,12 @@ class RandomSearchParamSource(ParamSource):
 
     def generate_knn_query(self, query_vector):
         return {
-            "knn": {
-                self._field: {
-                    "vector": query_vector,
-                    "k": self._top_k
+            "query": {
+                "knn": {
+                    self._field: {
+                        "vector": query_vector,
+                        "k": self._top_k
+                    }
                 }
             }
         }
