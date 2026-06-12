@@ -1,10 +1,8 @@
 import os
 import struct
-from osbenchmark.worker_coordinator.runner import Runner
 from osbenchmark.workload.params import ParamSource
 from .runners import register as register_runners
 import numpy as np
-from sklearn.datasets import make_blobs
 import json
 import copy
 
