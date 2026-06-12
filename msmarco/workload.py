@@ -179,7 +179,9 @@ class RandomSearchParamSource(ParamSource):
             "body": query, 
             "detailed-results": self._detailed_results,
             "neighbors": self._ground_truth[query_idx], 
-            "detailed-results": self._detailed_results
+            "detailed-results": self._detailed_results,
+            "calculate-recall": True
+        
         }
 
     def generate_knn_query(self, query_vector):
