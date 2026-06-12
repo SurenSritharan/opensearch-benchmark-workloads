@@ -1,6 +1,6 @@
 import os
 import struct
-from osbenchmark.workload.params import ParamSource
+from osbenchmark.workload.params import VectorSearchPartitionParamSource
 from .runners import register as register_runners
 import numpy as np
 import json
@@ -9,7 +9,7 @@ import copy
 def register(registry):
     register_runners(registry)
     registry.register_param_source("msmarco-fvec-bulk-source", MsMarcoFvecBulkSource)
-    registry.register_param_source("random-vector-search-param-source", RandomSearchParamSource)
+    registry.register_param_source("random-vector-search-param-source", VectorSearchPartitionParamSource)
 
 class MsMarcoFvecBulkSource:
     def __init__(self, workload, params, **kwargs):
