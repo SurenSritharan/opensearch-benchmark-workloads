@@ -157,11 +157,15 @@
             "method_name": "{{ method_name | default('disk_ann') }}",
             "engine": "{{ engine | default('jvector') }}",
             "space_type": "{{ space_type | default('cosinesimil') }}",
-            "body": {
-                  "docvalue_fields" : ["_id"],
-                  "stored_fields" : "_none_",
-                  "_source": false
-            },
+            "body": {"query": {
+                "knn": {
+                    "vector": {
+                        "vector": [0,1,2],
+                        "k": 10
+                    }
+                }
+              }
+            }
             "mode": "{{ mode | default('in_memory') }}"
             },
           "clients": {{ search_clients | default(1) }},
