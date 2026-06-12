@@ -157,12 +157,14 @@
             "method_name": "{{ method_name | default('disk_ann') }}",
             "engine": "{{ engine | default('jvector') }}",
             "space_type": "{{ space_type | default('cosinesimil') }}",
-            "body": {"query": {
+            "body": {
+              "size": 3,
+              "query": {
                 "knn": {
-                    "vector": {
-                        "vector": [0,1,2],
-                        "k": 10
-                    }
+                  "vector": {
+                    "vector": [0.15, 0.22, -0.81, 0.45],
+                    "k": 3
+                  }
                 }
               }
             },
