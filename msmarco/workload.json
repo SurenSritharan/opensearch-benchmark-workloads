@@ -132,6 +132,7 @@
           "operation": {
             "name": "vector-search-prod-queries",
             "operation-type": "vector-search",
+            "param-source": "random-vector-search-param-source",
             "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "detailed-results": true,
             "expected-output": {
@@ -145,7 +146,6 @@
             "data_set_format": "{{ query_data_set_format | default('bigann') }}",
             "data_set_path": "{{ query_data_set_path }}",
             "ground_truth_file": "{{ ground_truth_file }}",
-            "calculate-recall": true,
             "vector_file": "{{ vector_file }}",
             "neighbors_data_set_path": "{{ neighbors_data_set_path }}",
             "neighbors_data_set_format": "{{ neighbors_data_set_format | default('bigann') }}",
@@ -153,10 +153,11 @@
             "id-field-name": "{{ id_field_name | default('_id') }}",
             "repetitions": {{ number_of_repetitions | default(1) }},
             "dims": {{ target_index_dimension | default(1024) }},
-            "k": {{ query_k | int}},
+            "k": {{ query_k }},
             "method_name": "{{ method_name | default('disk_ann') }}",
             "engine": "{{ engine | default('jvector') }}",
             "space_type": "{{ space_type | default('cosinesimil') }}",
+            "body": "{{ query_body | default({}) | safe }}",
             "mode": "{{ mode | default('in_memory') }}"
             },
           "clients": {{ search_clients | default(1) }},
