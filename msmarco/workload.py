@@ -146,6 +146,7 @@ class RandomSearchParamSource(ParamSource):
         self._rng = np.random.RandomState(42)
         self._query_body = self._parse_body(params.get("body", {}))
         self._detailed_results = params.get("detailed-results", True)
+        self.k = int(params.get("k", 10))
 
     def _parse_body(self, body_param):
         if isinstance(body_param, str):
