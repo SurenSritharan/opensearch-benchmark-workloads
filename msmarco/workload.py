@@ -123,7 +123,7 @@ class RandomSearchParamSource(ParamSource):
         super().__init__(workload, params, **kwargs)
         logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
         self._workload = workload
-        # self._params = params
+        self._params = params
         
         self._index_name = params.get('index_name', 'target_index')
         self._dims = int(params.get("dims", 1024))
