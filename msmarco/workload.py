@@ -1,6 +1,6 @@
 import os
 import struct
-from osbenchmark.workload.params import VectorSearchPartitionParamSource
+from osbenchmark.workload.params import ParamSource, VectorSearchPartitionParamSource
 from .runners import register as register_runners
 import numpy as np
 import json
