@@ -12,6 +12,11 @@ from sklearn.datasets import make_blobs
 import logging
 import json
 
+def register(registry):
+    register_runners(registry)
+    registry.register_param_source("msmarco-fvec-bulk-source", MsMarcoFvecBulkSource)
+    registry.register_param_source("random-vector-search-param-source", RandomSearchParamSource)
+
 class MsMarcoFvecBulkSource:
     def __init__(self, workload, params, **kwargs):
         # Configuration properties defined in workload.json
@@ -117,8 +122,8 @@ class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
         logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
-        self._workload = workload
-        self._params = params
+        # self._workload = workload
+        # self._params = params
         
         self._index_name = params.get('index_name', 'target_index')
         self._dims = int(params.get("dims", 1024))
@@ -198,7 +203,4 @@ class RandomSearchParamSource(ParamSource):
             }
         }
 
-def register(registry):
-    register_runners(registry)
-    registry.register_param_source("msmarco-fvec-bulk-source", MsMarcoFvecBulkSource)
-    registry.register_param_source("random-vector-search-param-source", RandomSearchParamSource)
+
