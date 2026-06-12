@@ -122,113 +122,76 @@ def _get_cluster_centers(dims, num_centers, seed=42):
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: %s", workload, params)
-        self._workload = workload
-        self._params = params
         
         self._index_name = params.get('index_name', 'target_index')
         self._dims = int(params.get("dims", 1024))
         self._top_k = int(params.get("k", 10))
         self._field = params.get("field", "target_field")
         self._vector_file = params.get("vector_file", "cohere_msmarco_base.fvec")
+        self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
+        self._detailed_results = params.get("detailed-results", True)
         
         # .fvec format: 4 bytes (int32) for dimension + (dims * 4) bytes for float32 data
         self._record_size_bytes = 4 + (self._dims * 4)
-        
-        # Memory-map as uint8 for raw byte access
         self._data = np.memmap(self._vector_file, dtype='uint8', mode='r')
         
-        # Ground truth
-        self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
-        self._ground_truth = np.fromfile(self._ground_truth_file, dtype='int32').reshape(-1, 10)
+        # Load ground truth and ensure it matches expected shape
+        self._ground_truth = np.fromfile(self._ground_truth_file, dtype='int32').reshape(-1, self._top_k)
         self._num_queries = len(self._ground_truth)
         
-        # RNG and other state
         self._rng = np.random.RandomState(42)
         self._query_body = self._parse_body(params.get("body", {}))
-        self._detailed_results = params.get("detailed-results", True)
-        self.k = int(params.get("k", 10))
 
     def _parse_body(self, body_param):
         if isinstance(body_param, str):
             try:
-                return json.loads(body_param) if body_param.strip() else {}
+                return json.loads(body_param)
             except json.JSONDecodeError:
                 return {}
         return body_param
 
     def partition(self, partition_index, total_partitions):
+        # Create a deep copy of the partition via super()
         partition = super().partition(partition_index, total_partitions)
         partition._data = self._data
         partition._ground_truth = self._ground_truth
+        # Ensure each partition has an isolated RNG state
         partition._rng = np.random.RandomState(42 + partition_index)
         return partition
 
-    # def params(self):
-    #     query_idx = self._rng.randint(0, self._num_queries)
+    def params(self):
+        query_idx = self._rng.randint(0, self._num_queries)
         
-    #     # Calculate start: Skip the 4-byte header of the chosen record
-    #     start_byte = query_idx * self._record_size_bytes + 4
-    #     end_byte = start_byte + (self._dims * 4)
+        # Extract raw vector slice
+        start_byte = query_idx * self._record_size_bytes + 4
+        end_byte = start_byte + (self._dims * 4)
+        query_vec = self._data[start_byte : end_byte].view(np.float32).tolist()
         
-    #     # Extract raw bytes and interpret as float32
-    #     raw_vec = self._data[start_byte : end_byte].view(np.float32)
+        # Generate baseline query
+        query = self.generate_knn_query(query_vec)
         
-    #     # Force list conversion (essential for JSON serialization)
-    #     query_vec = raw_vec.tolist()
-        
-    #     query = self.generate_knn_query(query_vec)
-    #     query.update(self._query_body)
-    #     print(self._query_body)
-        
-    #     return {
-    #         "index": self._index_name, 
-    #         "size": self._top_k, 
-    #         "body": query, 
-    #         "detailed-results": self._detailed_results,
-    #         "neighbors": self._ground_truth[query_idx], 
-    #         "detailed-results": self._detailed_results
-    #     }
-    
-    
-    # def params(self):
-    #     import copy
-    #     query_idx = self._rng.randint(0, self._num_queries)
-        
-    #     # Calculate start: Skip the 4-byte header of the chosen record
-    #     start_byte = query_idx * self._record_size_bytes + 4
-    #     end_byte = start_byte + (self._dims * 4)
-        
-    #     # Extract raw bytes and interpret as float32
-    #     raw_vec = self._data[start_byte : end_byte].view(np.float32)
-    #     query_vec = raw_vec.tolist()
-        
-    #     # 1. Generate the isolated structure for this specific vector iteration
-    #     query = self.generate_knn_query(query_vec)
-        
-    #     # 2. Deep-merge self._query_body safely without simple top-level updates flattening your work
-    #     # If your method parameters live deep inside body, merge them explicitly:
-    #     if self._query_body:
-    #         # Safe deepcopy to prevent cross-pollination between iterations
-    #         user_body = copy.deepcopy(self._query_body)
-            
-    #         # If your custom body dict contains the outer query structure, merge deeper
-    #         if "query" in user_body and "query" in query:
-    #             # Deep navigate to avoid clobbering 'knn'
-    #             if "knn" in user_body["query"] and "knn" in query["query"]:
-    #                 # Safely merge specific parameters like method_parameters / ef_search
-    #                 query["query"]["knn"].update(user_body["query"]["knn"])
-    #         else:
-    #             # Fallback to standard top-level update if structure is flat
-    #             query.update(user_body)
+        # Merge dynamic body overrides if they exist
+        if self._query_body:
+            # We copy to prevent cross-pollination between iterations
+            self._deep_merge(query, copy.deepcopy(self._query_body))
 
-    #     return {
-    #         "index": self._index_name, 
-    #         "size": self._top_k, 
-    #         "body": query, 
-    #         "neighbors": self._ground_truth[query_idx], 
-    #         "detailed-results": self._detailed_results  # Cleaned up the duplicate declaration
-    #     }
+        return {
+            "index": self._index_name, 
+            "size": self._top_k, 
+            "body": query, 
+            "neighbors": self._ground_truth[query_idx].tolist(), # Convert to list for JSON
+            "detailed-results": self._detailed_results
+        }
+
+    def _deep_merge(self, base, overrides):
+        """
+        Recursively merges overrides into base.
+        """
+        for key, value in overrides.items():
+            if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                self._deep_merge(base[key], value)
+            else:
+                base[key] = value
 
     def generate_knn_query(self, query_vector):
         return {
@@ -237,51 +200,9 @@ class RandomSearchParamSource(ParamSource):
                     self._field: {
                         "vector": query_vector,
                         "k": self._top_k,
-                        "method_parameters": {
-                           "ef_search": 128
-                        }
+                        "method_parameters": {"ef_search": 128}
                     }
                 }
             }
         }
-    
-    def params(self):
-        query_idx = self._rng.randint(0, self._num_queries)
-        
-        # Calculate start: Skip the 4-byte header of the chosen record
-        start_byte = query_idx * self._record_size_bytes + 4
-        end_byte = start_byte + (self._dims * 4)
-        
-        # Extract raw bytes and interpret as float32
-        raw_vec = self._data[start_byte : end_byte].view(np.float32)
-        query_vec = raw_vec.tolist()
-        
-        # 1. Generate the base structure
-        query = self.generate_knn_query(query_vec)
-        
-        # 2. Deep-merge with user_body if provided
-        if self._query_body:
-            # Deepcopy is necessary if self._query_body is mutable and reused
-            # If self._query_body is strictly read-only, you could skip the copy
-            query = self._deep_merge(query, copy.deepcopy(self._query_body))
-
-        return {
-            "index": self._index_name, 
-            "size": self._top_k, 
-            "body": query, 
-            "neighbors": self._ground_truth[query_idx], 
-            "detailed-results": self._detailed_results
-        }
-
-    def _deep_merge(self, base, overrides):
-        """
-        Recursively merges 'overrides' into 'base'.
-        """
-        for key, value in overrides.items():
-            if isinstance(value, dict) and key in base and isinstance(base[key], dict):
-                self._deep_merge(base[key], value)
-            else:
-                base[key] = value
-        return base
-
 
