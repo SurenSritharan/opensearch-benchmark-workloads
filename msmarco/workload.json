@@ -160,10 +160,10 @@
             "body": {
               "size": 3,
               "query": {
-                "knn": {
-                  "vector": {
-                    "vector": [0.15, 0.22, -0.81, 0.45],
-                    "k": 3
+                "knn": {  
+                  "my_vector_field": {
+                    "vector": [0.1, 0.2],
+                    "k": 10
                   }
                 }
               }
