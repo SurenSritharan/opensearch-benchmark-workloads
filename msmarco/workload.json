@@ -135,6 +135,13 @@
             "param-source": "random-vector-search-param-source",
             "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
             "detailed-results": true,
+            "expected-output": {
+                "metrics": ["recall@k"]
+            },
+            "params": {
+                "neighbors_data_set_path": "/datasets/msmarco/cohere_msmarco_indices_d1024_k10_1m.ivec",
+                "k": 10
+            },
             "field": "{{ target_field_name | default('vector') }}",
             "data_set_format": "{{ query_data_set_format | default('bigann') }}",
             "data_set_path": "{{ query_data_set_path }}",
