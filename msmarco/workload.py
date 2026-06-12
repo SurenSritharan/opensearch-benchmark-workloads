@@ -162,7 +162,34 @@ class RandomSearchParamSource(ParamSource):
         new_source._rng = np.random.RandomState(42 + partition_index)
         return new_source
 
+    # def params(self):
+    #     query_idx = self._rng.randint(0, self._num_queries)
+        
+    #     # Calculate start: Skip the 4-byte header of the chosen record
+    #     start_byte = query_idx * self._record_size_bytes + 4
+    #     end_byte = start_byte + (self._dims * 4)
+        
+    #     # Extract raw bytes and interpret as float32
+    #     raw_vec = self._data[start_byte : end_byte].view(np.float32)
+        
+    #     # Force list conversion (essential for JSON serialization)
+    #     query_vec = raw_vec.tolist()
+        
+    #     query = self.generate_knn_query(query_vec)
+    #     query.update(self._query_body)
+    #     print(self._query_body)
+        
+    #     return {
+    #         "index": self._index_name, 
+    #         "size": self._top_k, 
+    #         "body": query, 
+    #         "detailed-results": self._detailed_results,
+    #         "neighbors": self._ground_truth[query_idx], 
+    #         "detailed-results": self._detailed_results
+    #     }
+    
     def params(self):
+        import copy
         query_idx = self._rng.randint(0, self._num_queries)
         
         # Calculate start: Skip the 4-byte header of the chosen record
@@ -171,21 +198,33 @@ class RandomSearchParamSource(ParamSource):
         
         # Extract raw bytes and interpret as float32
         raw_vec = self._data[start_byte : end_byte].view(np.float32)
-        
-        # Force list conversion (essential for JSON serialization)
         query_vec = raw_vec.tolist()
         
+        # 1. Generate the isolated structure for this specific vector iteration
         query = self.generate_knn_query(query_vec)
-        query.update(self._query_body)
-        print(self._query_body)
         
+        # 2. Deep-merge self._query_body safely without simple top-level updates flattening your work
+        # If your method parameters live deep inside body, merge them explicitly:
+        if self._query_body:
+            # Safe deepcopy to prevent cross-pollination between iterations
+            user_body = copy.deepcopy(self._query_body)
+            
+            # If your custom body dict contains the outer query structure, merge deeper
+            if "query" in user_body and "query" in query:
+                # Deep navigate to avoid clobbering 'knn'
+                if "knn" in user_body["query"] and "knn" in query["query"]:
+                    # Safely merge specific parameters like method_parameters / ef_search
+                    query["query"]["knn"].update(user_body["query"]["knn"])
+            else:
+                # Fallback to standard top-level update if structure is flat
+                query.update(user_body)
+
         return {
             "index": self._index_name, 
             "size": self._top_k, 
             "body": query, 
-            "detailed-results": self._detailed_results,
             "neighbors": self._ground_truth[query_idx], 
-            "detailed-results": self._detailed_results
+            "detailed-results": self._detailed_results  # Cleaned up the duplicate declaration
         }
 
     def generate_knn_query(self, query_vector):
