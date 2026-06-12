@@ -11,6 +11,7 @@ import numpy as np
 from sklearn.datasets import make_blobs
 import logging
 import json
+import copy
 
 def register(registry):
     register_runners(registry)
@@ -189,8 +190,62 @@ class RandomSearchParamSource(ParamSource):
     #         "detailed-results": self._detailed_results
     #     }
     
+    
+    # def params(self):
+    #     import copy
+    #     query_idx = self._rng.randint(0, self._num_queries)
+        
+    #     # Calculate start: Skip the 4-byte header of the chosen record
+    #     start_byte = query_idx * self._record_size_bytes + 4
+    #     end_byte = start_byte + (self._dims * 4)
+        
+    #     # Extract raw bytes and interpret as float32
+    #     raw_vec = self._data[start_byte : end_byte].view(np.float32)
+    #     query_vec = raw_vec.tolist()
+        
+    #     # 1. Generate the isolated structure for this specific vector iteration
+    #     query = self.generate_knn_query(query_vec)
+        
+    #     # 2. Deep-merge self._query_body safely without simple top-level updates flattening your work
+    #     # If your method parameters live deep inside body, merge them explicitly:
+    #     if self._query_body:
+    #         # Safe deepcopy to prevent cross-pollination between iterations
+    #         user_body = copy.deepcopy(self._query_body)
+            
+    #         # If your custom body dict contains the outer query structure, merge deeper
+    #         if "query" in user_body and "query" in query:
+    #             # Deep navigate to avoid clobbering 'knn'
+    #             if "knn" in user_body["query"] and "knn" in query["query"]:
+    #                 # Safely merge specific parameters like method_parameters / ef_search
+    #                 query["query"]["knn"].update(user_body["query"]["knn"])
+    #         else:
+    #             # Fallback to standard top-level update if structure is flat
+    #             query.update(user_body)
+
+    #     return {
+    #         "index": self._index_name, 
+    #         "size": self._top_k, 
+    #         "body": query, 
+    #         "neighbors": self._ground_truth[query_idx], 
+    #         "detailed-results": self._detailed_results  # Cleaned up the duplicate declaration
+    #     }
+
+    # def generate_knn_query(self, query_vector):
+    #     return {
+    #         "query": {
+    #             "knn": {
+    #                 self._field: {
+    #                     "vector": query_vector,
+    #                     "k": self._top_k,
+    #                     "method_parameters": {
+    #                        "ef_search": 128
+    #                     }
+    #                 }
+    #             }
+    #         }
+    #     }
+    
     def params(self):
-        import copy
         query_idx = self._rng.randint(0, self._num_queries)
         
         # Calculate start: Skip the 4-byte header of the chosen record
@@ -201,46 +256,32 @@ class RandomSearchParamSource(ParamSource):
         raw_vec = self._data[start_byte : end_byte].view(np.float32)
         query_vec = raw_vec.tolist()
         
-        # 1. Generate the isolated structure for this specific vector iteration
+        # 1. Generate the base structure
         query = self.generate_knn_query(query_vec)
         
-        # 2. Deep-merge self._query_body safely without simple top-level updates flattening your work
-        # If your method parameters live deep inside body, merge them explicitly:
+        # 2. Deep-merge with user_body if provided
         if self._query_body:
-            # Safe deepcopy to prevent cross-pollination between iterations
-            user_body = copy.deepcopy(self._query_body)
-            
-            # If your custom body dict contains the outer query structure, merge deeper
-            if "query" in user_body and "query" in query:
-                # Deep navigate to avoid clobbering 'knn'
-                if "knn" in user_body["query"] and "knn" in query["query"]:
-                    # Safely merge specific parameters like method_parameters / ef_search
-                    query["query"]["knn"].update(user_body["query"]["knn"])
-            else:
-                # Fallback to standard top-level update if structure is flat
-                query.update(user_body)
+            # Deepcopy is necessary if self._query_body is mutable and reused
+            # If self._query_body is strictly read-only, you could skip the copy
+            query = self._deep_merge(query, copy.deepcopy(self._query_body))
 
         return {
             "index": self._index_name, 
             "size": self._top_k, 
             "body": query, 
             "neighbors": self._ground_truth[query_idx], 
-            "detailed-results": self._detailed_results  # Cleaned up the duplicate declaration
+            "detailed-results": self._detailed_results
         }
 
-    def generate_knn_query(self, query_vector):
-        return {
-            "query": {
-                "knn": {
-                    self._field: {
-                        "vector": query_vector,
-                        "k": self._top_k,
-                        "method_parameters": {
-                           "ef_search": 128
-                        }
-                    }
-                }
-            }
-        }
+    def _deep_merge(self, base, overrides):
+        """
+        Recursively merges 'overrides' into 'base'.
+        """
+        for key, value in overrides.items():
+            if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                self._deep_merge(base[key], value)
+            else:
+                base[key] = value
+        return base
 
 
