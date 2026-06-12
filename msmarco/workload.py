@@ -189,12 +189,14 @@ class RandomSearchParamSource(ParamSource):
                 "knn": {
                     self._field: {
                         "vector": query_vector,
-                        "k": self._top_k
+                        "k": self._top_k,
+                        "method_parameters": {
+                           "ef_search": 128
+                        }
                     }
                 }
             }
         }
-
 
 def register(registry):
     register_runners(registry)
