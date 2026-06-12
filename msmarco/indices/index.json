@@ -23,8 +23,7 @@
           "engine": "{{ engine | default('jvector') }}",
           "parameters": {
             "ef_construction": {{ hnsw_ef_construction | default(128) }},
-            "m": {{ hnsw_m | default(16) }},
-            "ground_truth_file": {{ ground_truth_file }}
+            "m": {{ hnsw_m | default(16) }}
           }
         }
       }
