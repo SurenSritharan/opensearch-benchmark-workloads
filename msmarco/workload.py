@@ -153,12 +153,16 @@ class RandomSearchParamSource(ParamSource):
             # We copy to prevent cross-pollination between iterations
             self._deep_merge(query, copy.deepcopy(self._query_body))
 
+
+        # Convert to string to match opensearch _id
+        ground_truth_ids = [str(int(x)) for x in self._ground_truth[query_idx]]
+        
         result = {
             "index": self._index_name, 
             "size": self._top_k, 
             "k": self._top_k,
             "body": query, 
-            "neighbors": self._ground_truth[query_idx].tolist(), # Convert to list for JSON
+            "neighbors": ground_truth_ids, # Convert to list for JSON
             "detailed-results": self._detailed_results
         }
         print(f"DEBUG: 'k' in params = {'k' in result}")
