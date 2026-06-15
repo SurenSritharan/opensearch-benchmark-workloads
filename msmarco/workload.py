@@ -158,6 +158,8 @@ class RandomSearchParamSource(ParamSource):
                     if len(row_data) == k_length:
                         # Slice or pad to enforce matching dimensions if required
                         gt_list.append(row_data[:self._top_k])
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse .ivec ground truth using custom client reader: {str(e)}")
             
         return np.array(gt_list, dtype='int32')
     
