@@ -121,18 +121,17 @@ class RandomSearchParamSource(ParamSource):
         self._query_body = self._parse_body(params.get("body", {}))
         
         # ===== DEBUG: Ground Truth Info =====
-        with open('/tmp/ground_truth_debug.txt', 'w') as f:
-        f.write("="*60 + "\n")
-        f.write("GROUND TRUTH FILE LOADED\n")
-        f.write("="*60 + "\n")
-        f.write(f"Ground truth file: {self._ground_truth_file}\n")
-        f.write(f"Ground truth shape: {self._ground_truth.shape}\n")
-        f.write(f"Number of queries: {self._num_queries}\n")
-        f.write(f"Top-k: {self._top_k}\n")
-        f.write("\nFirst 3 queries and their ground truth neighbors:\n")
+        print("\n" + "="*60)
+        print("GROUND TRUTH FILE LOADED")
+        print("="*60)
+        print(f"Ground truth file: {self._ground_truth_file}")
+        print(f"Ground truth shape: {self._ground_truth.shape}")
+        print(f"Number of queries: {self._num_queries}")
+        print(f"Top-k: {self._top_k}")
+        print(f"\nFirst 3 queries and their ground truth neighbors:")
         for i in range(min(3, self._num_queries)):
-            f.write(f"  Query {i}: {self._ground_truth[i].tolist()}\n")
-        f.write("="*60 + "\n")
+            print(f"  Query {i}: {self._ground_truth[i].tolist()}")
+        print("="*60 + "\n")
         # ===== END DEBUG =====
 
     def _parse_body(self, body_param):
