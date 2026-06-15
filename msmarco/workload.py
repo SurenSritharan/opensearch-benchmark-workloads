@@ -101,7 +101,7 @@ class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
         print(params)
-        self._operation_type = params.get('operation_type', "vector_search")
+        self._operation_type = params.get('operation-type', "vector-search")
         self._index_name = params.get('index_name', 'target_index')
         self._dims = int(params.get("dims", 1024))
         self._top_k = int(params.get("k", 10))
