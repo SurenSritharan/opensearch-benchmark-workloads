@@ -155,7 +155,7 @@
             },
           "clients": {{ search_clients | default(1) }},
           "warmup-iterations": {{ warmup_iterations | default(0) }},
-          "iterations": 5000
+          "iterations": {{ iterations | default(1000) }}
         }
       ]
     },
