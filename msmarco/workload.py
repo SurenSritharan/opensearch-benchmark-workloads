@@ -113,8 +113,8 @@ class RandomSearchParamSource(ParamSource):
         self._record_size_bytes = 4 + (self._dims * 4)
         self._data = np.memmap(self._vector_file, dtype='uint8', mode='r')
         
-        # Load ground truth and ensure it matches expected shape
-        self._ground_truth = np.fromfile(self._ground_truth_file, dtype='int32').reshape(-1, self._top_k)
+        self._ground_truth = self._load_ivec_ground_truth()
+        
         self._num_queries = len(self._ground_truth)
         
         self._rng = np.random.RandomState(42)
@@ -134,6 +134,33 @@ class RandomSearchParamSource(ParamSource):
         print("="*60 + "\n")
         # ===== END DEBUG =====
 
+    def _load_ivec_ground_truth(self):
+        """
+        Custom parser extension to dynamically consume standard .ivec length prefixes 
+        to ensure data indices are not bit-shifted.
+        """
+        gt_list = []
+        try:
+            with open(self._ground_truth_file, 'rb') as f:
+                while True:
+                    # Read the 4-byte prefix identifying the current row's length
+                    k_bytes = f.read(4)
+                    if not k_bytes or len(k_bytes) < 4:
+                        break
+                    
+                    # Unpack row length integer (e.g. k=10)
+                    k_length = struct.unpack('i', k_bytes)[0]
+                    
+                    # Safely consume exactly 'k_length' integer entries for this row
+                    row_data = np.fromfile(f, dtype='int32', count=k_length)
+                    
+                    # Structural integrity verification
+                    if len(row_data) == k_length:
+                        # Slice or pad to enforce matching dimensions if required
+                        gt_list.append(row_data[:self._top_k])
+            
+        return np.array(gt_list, dtype='int32')
+    
     def _parse_body(self, body_param):
         if isinstance(body_param, str):
             try:
