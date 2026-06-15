@@ -100,7 +100,8 @@ class MsMarcoFvecPartition:
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        
+        print(params)
+        self._operation_type = params.get('operation_type', "vector_search")
         self._index_name = params.get('index_name', 'target_index')
         self._dims = int(params.get("dims", 1024))
         self._top_k = int(params.get("k", 10))
@@ -211,6 +212,7 @@ class RandomSearchParamSource(ParamSource):
             "index": self._index_name, 
             "size": self._top_k, 
             "k": self._top_k,
+            "operation_type": self._operation_type,
             "body": query, 
             "neighbors": ground_truth_ids, # Convert to list for JSON
             "detailed-results": self._detailed_results
