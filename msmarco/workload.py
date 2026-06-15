@@ -212,7 +212,7 @@ class RandomSearchParamSource(ParamSource):
             "index": self._index_name, 
             "size": self._top_k, 
             "k": self._top_k,
-            "operation_type": self._operation_type,
+            "operation-type": self._operation_type,
             "body": query, 
             "neighbors": ground_truth_ids, # Convert to list for JSON
             "detailed-results": self._detailed_results
