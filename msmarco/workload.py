@@ -119,6 +119,20 @@ class RandomSearchParamSource(ParamSource):
         
         self._rng = np.random.RandomState(42)
         self._query_body = self._parse_body(params.get("body", {}))
+        
+        # ===== DEBUG: Ground Truth Info =====
+        print("\n" + "="*60)
+        print("GROUND TRUTH FILE LOADED")
+        print("="*60)
+        print(f"Ground truth file: {self._ground_truth_file}")
+        print(f"Ground truth shape: {self._ground_truth.shape}")
+        print(f"Number of queries: {self._num_queries}")
+        print(f"Top-k: {self._top_k}")
+        print(f"\nFirst 3 queries and their ground truth neighbors:")
+        for i in range(min(3, self._num_queries)):
+            print(f"  Query {i}: {self._ground_truth[i].tolist()}")
+        print("="*60 + "\n")
+        # ===== END DEBUG =====
 
     def _parse_body(self, body_param):
         if isinstance(body_param, str):
@@ -139,6 +153,13 @@ class RandomSearchParamSource(ParamSource):
 
     def params(self):
         query_idx = self._rng.randint(0, self._num_queries)
+        
+        # ===== DEBUG: Query Info =====
+        print("\n" + "="*60)
+        print(f"GENERATING QUERY PARAMS (Query Index: {query_idx})")
+        print("="*60)
+        print(f"Expected ground truth neighbors: {self._ground_truth[query_idx].tolist()}")
+        # ===== END DEBUG =====
         
         # Extract raw vector slice
         start_byte = query_idx * self._record_size_bytes + 4
