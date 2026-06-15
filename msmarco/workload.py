@@ -153,13 +153,18 @@ class RandomSearchParamSource(ParamSource):
             # We copy to prevent cross-pollination between iterations
             self._deep_merge(query, copy.deepcopy(self._query_body))
 
-        return {
+        result = {
             "index": self._index_name, 
             "size": self._top_k, 
+            "k": self._top_k,
             "body": query, 
             "neighbors": self._ground_truth[query_idx].tolist(), # Convert to list for JSON
             "detailed-results": self._detailed_results
         }
+        print(f"DEBUG: 'k' in params = {'k' in result}")
+        print(f"DEBUG: k value = {result.get('k', 'NOT FOUND')}")
+        
+        return result
 
     def _deep_merge(self, base, overrides):
         """
