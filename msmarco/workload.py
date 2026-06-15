@@ -101,6 +101,7 @@ class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
         print(params)
+        
         self._operation_type = params.get('operation-type', "vector-search")
         self._index_name = params.get('index_name', 'target_index')
         self._dims = int(params.get("dims", 1024))
@@ -109,6 +110,7 @@ class RandomSearchParamSource(ParamSource):
         self._vector_file = params.get("vector_file", "cohere_msmarco_base.fvec")
         self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
         self._detailed_results = params.get("detailed-results", True)
+        self._ef_search = int(params.get("ef_search", 32))
         
         # .fvec format: 4 bytes (int32) for dimension + (dims * 4) bytes for float32 data
         self._record_size_bytes = 4 + (self._dims * 4)
@@ -239,7 +241,7 @@ class RandomSearchParamSource(ParamSource):
                     self._field: {
                         "vector": query_vector,
                         "k": self._top_k,
-                        "method_parameters": {"ef_search": 128}
+                        "method_parameters": {"ef_search": self._ef_search }
                     }
                 }
             }
