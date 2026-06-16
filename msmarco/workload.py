@@ -97,6 +97,7 @@ class MsMarcoFvecPartition:
             "action-metadata-present": True,
             "body": body
         }
+        
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
@@ -123,15 +124,14 @@ class RandomSearchParamSource(ParamSource):
         self._rng = np.random.RandomState(42)
         self._query_body = self._parse_body(params.get("body", {}))
         
-        is_time_based = "time-period" in params
-    
-        if is_time_based:
-            total_duration = params.get("time-period")
-            warmup_duration = params.get("warmup-time-period", 0)
-            print(f"Executing a duration-based test for {total_duration}s")
+        if "time-period" in params:
+            self.infinite = True
+            self.total_seconds = params.get("time-period")
+            print(f"Executing a duration-based test for {self.total_seconds} seconds")
         else:
-            total_iterations = params.get("iterations")
+            total_iterations = params.get("iterations", 1000)
             print(f"Executing an iteration-based test for {total_iterations} loops")
+            self.infinite = False
         
         # ===== DEBUG: Ground Truth Info =====
         print("\n" + "="*60)
