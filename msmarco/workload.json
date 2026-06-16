@@ -147,10 +147,15 @@
             "space_type": "{{ space_type | default('cosinesimil') }}",
             "body": "{{ query_body | default({}) | safe }}",
             "mode": "{{ mode | default('in_memory') }}"
-            },
+          },
           "clients": {{ search_clients | default(1) }},
+          {% if time_period is defined %}
+          "warmup-time-period": {{ warmup_time_period | default(60) }},
+          "time-period": {{ time_period }}
+          {% else %}
           "warmup-iterations": {{ warmup_iterations | default(0) }},
           "iterations": {{ iterations | default(1000) }}
+          {% endif %}
         }
       ]
     },

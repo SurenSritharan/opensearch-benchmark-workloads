@@ -123,6 +123,16 @@ class RandomSearchParamSource(ParamSource):
         self._rng = np.random.RandomState(42)
         self._query_body = self._parse_body(params.get("body", {}))
         
+        is_time_based = "time-period" in params
+    
+        if is_time_based:
+            total_duration = params.get("time-period")
+            warmup_duration = params.get("warmup-time-period", 0)
+            print(f"Executing a duration-based test for {total_duration}s")
+        else:
+            total_iterations = params.get("iterations")
+            print(f"Executing an iteration-based test for {total_iterations} loops")
+        
         # ===== DEBUG: Ground Truth Info =====
         print("\n" + "="*60)
         print("GROUND TRUTH FILE LOADED")
