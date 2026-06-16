@@ -107,14 +107,14 @@ class RandomSearchParamSource(ParamSource):
         self._dims = int(params.get("dims", 1024))
         self._top_k = int(params.get("k", 10))
         self._field = params.get("field", "target_field")
-        self._vector_file = params.get("vector_file", "cohere_msmarco_base.fvec")
+        self._queries_file = params.get("queries_file", "queries.fvec")
         self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
         self._detailed_results = params.get("detailed-results", True)
         self._ef_search = int(params.get("ef_search", 32))
         
         # .fvec format: 4 bytes (int32) for dimension + (dims * 4) bytes for float32 data
         self._record_size_bytes = 4 + (self._dims * 4)
-        self._data = np.memmap(self._vector_file, dtype='uint8', mode='r')
+        self._data = np.memmap(self._queries_file, dtype='uint8', mode='r')
         
         self._ground_truth = self._load_ivec_ground_truth()
         
