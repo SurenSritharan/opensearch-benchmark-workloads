@@ -124,7 +124,7 @@ class RandomSearchParamSource(ParamSource):
         self._rng = np.random.RandomState(42)
         self._query_body = self._parse_body(params.get("body", {}))
         
-        if "time-period" in params:
+        if "time_period" in params:
             self.total_seconds = params.get("time_period")
             print(f"Executing a duration-based test for {self.total_seconds} seconds")
         else:
