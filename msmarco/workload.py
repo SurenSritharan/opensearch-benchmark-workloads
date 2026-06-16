@@ -125,13 +125,11 @@ class RandomSearchParamSource(ParamSource):
         self._query_body = self._parse_body(params.get("body", {}))
         
         if "time-period" in params:
-            self.infinite = True
             self.total_seconds = params.get("time-period")
             print(f"Executing a duration-based test for {self.total_seconds} seconds")
         else:
             total_iterations = params.get("iterations", 1000)
             print(f"Executing an iteration-based test for {total_iterations} loops")
-            self.infinite = False
         
         # ===== DEBUG: Ground Truth Info =====
         print("\n" + "="*60)
