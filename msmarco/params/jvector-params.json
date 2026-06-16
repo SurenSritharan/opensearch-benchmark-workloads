@@ -9,10 +9,6 @@
   "engine": "jvector",
   "method_name": "disk_ann",
   "space_type": "cosinesimil",
-  "query_k": 10,
-  "query_count": 10000,
-  "search_clients": 1,
-  "warmup_iterations": 100,
   "mode": "in_memory",
   "query_body": {
         "docvalue_fields" : ["_id"],

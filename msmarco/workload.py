@@ -186,12 +186,12 @@ class RandomSearchParamSource(ParamSource):
     def params(self):
         query_idx = self._rng.randint(0, self._num_queries)
         
-        # ===== DEBUG: Query Info =====
-        print("\n" + "="*60)
-        print(f"GENERATING QUERY PARAMS (Query Index: {query_idx})")
-        print("="*60)
-        print(f"Expected ground truth neighbors: {self._ground_truth[query_idx].tolist()}")
-        # ===== END DEBUG =====
+        # # ===== DEBUG: Query Info =====
+        # print("\n" + "="*60)
+        # print(f"GENERATING QUERY PARAMS (Query Index: {query_idx})")
+        # print("="*60)
+        # print(f"Expected ground truth neighbors: {self._ground_truth[query_idx].tolist()}")
+        # # ===== END DEBUG =====
         
         # Extract raw vector slice
         start_byte = query_idx * self._record_size_bytes + 4
@@ -219,8 +219,8 @@ class RandomSearchParamSource(ParamSource):
             "neighbors": ground_truth_ids, # Convert to list for JSON
             "detailed-results": self._detailed_results
         }
-        print(f"DEBUG: 'k' in params = {'k' in result}")
-        print(f"DEBUG: k value = {result.get('k', 'NOT FOUND')}")
+        # print(f"DEBUG: 'k' in params = {'k' in result}")
+        # print(f"DEBUG: k value = {result.get('k', 'NOT FOUND')}")
         
         return result
 
