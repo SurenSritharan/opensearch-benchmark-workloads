@@ -168,7 +168,6 @@ class RandomSearchParamSource(ParamSource):
                     
                     # Unpack row length integer (e.g. k=10)
                     k_length = struct.unpack('i', k_bytes)[0]
-                    print(f"Reading {k_length} integers")
                     
                     # Safely consume exactly 'k_length' integer entries for this row
                     row_data = np.fromfile(f, dtype='int32', count=k_length)
