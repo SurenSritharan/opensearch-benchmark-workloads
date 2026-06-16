@@ -232,7 +232,8 @@ class RandomSearchParamSource(ParamSource):
             "operation-type": self._operation_type,
             "body": query, 
             "neighbors": ground_truth_ids, # Convert to list for JSON
-            "detailed-results": self._detailed_results
+            "detailed-results": self._detailed_results,
+            "request-params": {"size": self._top_k}
         }
         # print(f"DEBUG: 'k' in params = {'k' in result}")
         # print(f"DEBUG: k value = {result.get('k', 'NOT FOUND')}")
