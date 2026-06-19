@@ -10,6 +10,7 @@ import random
 import numpy as np
 from sklearn.datasets import make_blobs
 import logging
+import json
 
 
 def register(registry):
@@ -65,7 +66,7 @@ def _get_cluster_centers(dims, num_centers, seed=42):
 class RandomBulkParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
+        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, json.dumps(params))
         self._bulk_size = params.get("bulk-size", 100)
         self._index_name = params.get('index_name', 'target_index')
         self._field = params.get("field", "target_field")
@@ -105,17 +106,25 @@ class RandomBulkParamSource(ParamSource):
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
+        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, json.dumps(params))
         self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 768)
         self._cache = params.get("cache", False)
         self._top_k = params.get("k", 100)
         self._field = params.get("field", "target_field")
-        self._query_body = params.get("body", {})
+        self._query_body = self._parse_body(params.get("body", {}))        
         self._detailed_results = params.get("detailed-results", False)
         self._num_centers = params.get("num_centers", 2000)
         self._cluster_std = params.get("cluster_std", 0.5)
         self._centers = _get_cluster_centers(self._dims, self._num_centers)
+        
+    def _parse_body(self, body_param):
+        if isinstance(body_param, str):
+            try:
+                return json.loads(body_param)
+            except json.JSONDecodeError:
+                return {}
+        return body_param
 
     def partition(self, partition_index, total_partitions):
         return self

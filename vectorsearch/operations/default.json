@@ -37,7 +37,7 @@
         "knn.feature.prefetch.enabled": {{ knn_prefetch_enabled | default(false) | tojson }}
       }
     },
-    "include-in-reporting": true
+    "include-in-reporting": {{ include_in_reporting | default(true) | tojson }}
 },
 {
     "name": "grpc-vector-bulk",
@@ -83,7 +83,7 @@
     "name": "prod-queries-multisegment",
     "operation-type": "vector-search",
     "index": "{{ target_index_name | default('target_index') }}",
-    "detailed-results": true,
+    "detailed-results": {{ detailed_results | default(true) | tojson }},
     {% if query_k is defined %}
     "k": {{ query_k }},
     {% endif %}
@@ -110,7 +110,7 @@
     "name": "prod-queries",
     "operation-type": "vector-search",
     "index": "{{ target_index_name | default('target_index') }}",
-    "detailed-results": true,
+    "detailed-results": {{ detailed_results | default(true) | tojson }},
     {% if query_k is defined %}
     "k": {{ query_k }},
     {% endif %}
@@ -149,7 +149,7 @@
     ,"ef_search": {{ hnsw_ef_search }}
     {% endif %}
     ,"index_name": "{{ target_index_name | default('target_index') }}",
-    "detailed-results": true
+    "detailed-results": {{ detailed_results | default(true) | tojson }}
 },
 {
     "name": "random-vector-indexing",
@@ -160,5 +160,5 @@
     "field" : "{{ target_field_name | default('target_field') }}",
     "partitions": {{ partitions | default(1000) | int }},
     "bulk-size": {{ target_index_bulk_size | default(100)}},
-    "detailed-results": true
+    "detailed-results": {{ detailed_results | default(true) | tojson }}
 }
