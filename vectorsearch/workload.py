@@ -66,7 +66,7 @@ def _get_cluster_centers(dims, num_centers, seed=42):
 class RandomBulkParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, json.dumps(params))
+        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
         self._bulk_size = params.get("bulk-size", 100)
         self._index_name = params.get('index_name', 'target_index')
         self._field = params.get("field", "target_field")
@@ -106,7 +106,7 @@ class RandomBulkParamSource(ParamSource):
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, json.dumps(params))
+        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
         self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 768)
         self._cache = params.get("cache", False)
@@ -140,7 +140,13 @@ class RandomSearchParamSource(ParamSource):
         query_vec = query_vec[0].tolist()
         query = self.generate_knn_query(query_vec)
         query.update(self._query_body)
-        return {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
+        
+        result = {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
+        
+        # Log the JSON representation of the body
+        logging.getLogger(__name__).info("Query body as JSON: %s", json.dumps(query, indent=2))
+        
+        return result
 
     def generate_knn_query(self, query_vector):
         return {
