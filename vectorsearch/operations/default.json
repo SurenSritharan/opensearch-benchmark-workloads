@@ -34,7 +34,7 @@
     "operation-type": "put-settings",
     "body": {
       "persistent": {
-        "knn.feature.prefetch.enabled": {{ knn_prefetch_enabled | default(false) }}
+        "knn.feature.prefetch.enabled": {{ knn_prefetch_enabled | default(false) | tojson }}
       }
     },
     "include-in-reporting": true
