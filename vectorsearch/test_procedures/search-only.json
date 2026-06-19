@@ -3,11 +3,13 @@
     "default": true,
     "description": "Perform only vector search on previously indexed cluster, skipping warmup-indices task.",
     "schedule": [
+        {% if engine is not defined or engine != "jvector" %}
         {
             "name" : "warmup-indices",
             "operation" : "warmup-indices",
             "index": "{{ target_index_name | default('target_index') }}"
         },
+        {% endif %}
         {
             "operation": {
                 "name": "prod-queries",
