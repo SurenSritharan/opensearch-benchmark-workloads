@@ -106,13 +106,25 @@ class RandomBulkParamSource(ParamSource):
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
+        logger = logging.getLogger(__name__)
+        logger.info("=== DEBUG: RandomSearchParamSource __init__ ===")
+        logger.info("Workload: [%s], params: [%s]", workload, params)
+        logger.info("Type of params['body']: %s", type(params.get("body")))
+        logger.info("Value of params['body']: %s", params.get("body"))
+        logger.info("Type of params['detailed-results']: %s", type(params.get("detailed-results")))
+        logger.info("Value of params['detailed-results']: %s", params.get("detailed-results"))
+        
         self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 768)
         self._cache = params.get("cache", False)
         self._top_k = params.get("k", 100)
         self._field = params.get("field", "target_field")
-        self._query_body = self._parse_body(params.get("body", {}))        
+        
+        body_param = params.get("body", {})
+        logger.info("Before _parse_body - type: %s, value: %s", type(body_param), body_param)
+        self._query_body = self._parse_body(body_param)
+        logger.info("After _parse_body - type: %s, value: %s", type(self._query_body), self._query_body)
+        
         self._detailed_results = params.get("detailed-results", False)
         self._num_centers = params.get("num_centers", 2000)
         self._cluster_std = params.get("cluster_std", 0.5)
