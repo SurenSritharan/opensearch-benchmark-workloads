@@ -56,9 +56,9 @@
           "type": "integer"
         },
         {%- endif %}
-        "{{ target_field_name }}": {
+        "{{ target_field_name | default('vector') }}": {
           "type": "knn_vector",
-          "dimension": {{ target_index_dimension }},
+          "dimension": {{ target_index_dimension | default(1024) }},
           {%- if mode is defined %}
           "mode": "{{ mode }}",
           {%- endif %}
@@ -69,27 +69,31 @@
           "model_id": "{{ train_model_id }}"
           {%- else %}
           "method": {
-            "name": "{{ method_name | default('disk_ann') }}",
-            "space_type": "{{ target_index_space_type }}",
-            "engine": "{{ engine }}",
+            "name": "{{ method_name | default('hnsw') }}",
+            "space_type": "{{ target_index_space_type | default('cosinesimil') }}",
+            "engine": "{{ engine | default('lucene') }}",
             "parameters": {
+              {%- set prepend_comma = false %}
               {%- if hnsw_ef_search is defined and hnsw_ef_search %}
                 "ef_search": {{ hnsw_ef_search }}
+                {%- set prepend_comma = true %}
               {%- endif %}
+              
               {%- if hnsw_ef_construction is defined and hnsw_ef_construction %}
-              {%- if hnsw_ef_search is defined and hnsw_ef_search %}
-                ,
-              {%- endif %}
+                {%- if prepend_comma %},{% endif %}
                 "ef_construction": {{ hnsw_ef_construction }}
+                {%- set prepend_comma = true %}
               {%- endif %}
+              
               {%- if hnsw_m is defined and hnsw_m %}
-              {%- if hnsw_ef_construction is defined and hnsw_ef_construction %}
-                ,
-              {%- endif %}
+                {%- if prepend_comma %},{% endif %}
                 "m": {{ hnsw_m }}
+                {%- set prepend_comma = true %}
               {%- endif %}
+              
               {%- if encoder is defined and encoder %}
-                , "encoder": {
+                {%- if prepend_comma %},{% endif %}
+                "encoder": {
                   "name": "{{ encoder }}"
                 }
               {%- endif %}
