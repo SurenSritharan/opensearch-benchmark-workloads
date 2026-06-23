@@ -19,11 +19,51 @@ class MsMarcoFvecBulkSource:
         self.index_name = params.get("index")
         
         # Fixed MS MARCO Cohere structural variables
-        self.dim = 1024  
+        self.dim = 1024
         self.vector_size_bytes = 4 + (self.dim * 4)
         
         self.file_size = os.path.getsize(self.file_path)
-        self.total_docs = self.file_size // self.vector_size_bytes
+        
+        # Support dynamic corpus size - can be overridden by num_vectors or corpus_size param
+        # Priority: num_vectors > corpus_size > file size
+        self.total_docs = params.get("num_vectors")
+        
+        if self.total_docs is None:
+            # Try corpus_size parameter
+            corpus_size = params.get("corpus_size")
+            if corpus_size is not None:
+                self.total_docs = self._parse_corpus_size(corpus_size)
+                print(f"Using corpus_size '{corpus_size}': {self.total_docs} vectors")
+            else:
+                # Fall back to file size
+                self.total_docs = self.file_size // self.vector_size_bytes
+                print(f"Calculated total_docs from file size: {self.total_docs}")
+        else:
+            print(f"Using specified num_vectors: {self.total_docs}")
+        
+        # Validate that requested vectors don't exceed file size
+        max_possible = self.file_size // self.vector_size_bytes
+        if self.total_docs > max_possible:
+            print(f"WARNING: Requested {self.total_docs} vectors but file only contains {max_possible}")
+            print(f"Limiting to {max_possible} vectors")
+            self.total_docs = max_possible
+    
+    def _parse_corpus_size(self, corpus_size):
+        """Parse corpus size string (e.g., '1m', '10m', '100m', '1b') to number of vectors"""
+        corpus_size_str = str(corpus_size).lower()
+        try:
+            if corpus_size_str.endswith('b'):
+                return int(float(corpus_size_str[:-1]) * 1_000_000_000)
+            elif corpus_size_str.endswith('m'):
+                return int(float(corpus_size_str[:-1]) * 1_000_000)
+            elif corpus_size_str.endswith('k'):
+                return int(float(corpus_size_str[:-1]) * 1_000)
+            else:
+                # Try parsing as raw number
+                return int(corpus_size_str)
+        except (ValueError, AttributeError):
+            print(f"WARNING: Could not parse corpus_size '{corpus_size}', using file size")
+            return self.file_size // self.vector_size_bytes
 
     def partition(self, client_index, total_clients):
         # Segmenting file chunks cleanly across multi-client GKE pod deployments
@@ -124,6 +164,11 @@ class RandomSearchParamSource(ParamSource):
         self._rng = np.random.RandomState(42)
         self._query_body = self._parse_body(params.get("body", {}))
         
+        # Shuffle-based query selection (no repeats until all queries used)
+        self._query_indices = np.arange(self._num_queries)
+        self._rng.shuffle(self._query_indices)
+        self._current_idx = 0
+        
         # ===== DEBUG: Ground Truth Info =====
         print("\n" + "="*60)
         print("GROUND TRUTH FILE LOADED")
@@ -132,6 +177,7 @@ class RandomSearchParamSource(ParamSource):
         print(f"Ground truth shape: {self._ground_truth.shape}")
         print(f"Number of queries: {self._num_queries}")
         print(f"Top-k: {self._top_k}")
+        print(f"Query selection: Shuffle-based (no repeats until all {self._num_queries} queries used)")
         print(f"\nFirst 3 queries and their ground truth neighbors:")
         for i in range(min(3, self._num_queries)):
             print(f"  Query {i}: {self._ground_truth[i].tolist()}")
@@ -180,12 +226,22 @@ class RandomSearchParamSource(ParamSource):
         partition = super().partition(partition_index, total_partitions)
         partition._data = self._data
         partition._ground_truth = self._ground_truth
-        # Ensure each partition has an isolated RNG state
+        # Ensure each partition has an isolated RNG state and shuffled indices
         partition._rng = np.random.RandomState(42 + partition_index)
+        partition._query_indices = np.arange(self._num_queries)
+        partition._rng.shuffle(partition._query_indices)
+        partition._current_idx = 0
         return partition
 
     def params(self):
-        query_idx = self._rng.randint(0, self._num_queries)
+        # Get next query from shuffled list
+        query_idx = self._query_indices[self._current_idx]
+        self._current_idx += 1
+        
+        # When we've used all queries, reshuffle and start over
+        if self._current_idx >= self._num_queries:
+            self._rng.shuffle(self._query_indices)
+            self._current_idx = 0
         
         # # ===== DEBUG: Query Info =====
         # print("\n" + "="*60)

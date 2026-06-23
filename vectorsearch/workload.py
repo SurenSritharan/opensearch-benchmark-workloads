@@ -10,7 +10,6 @@ import random
 import numpy as np
 from sklearn.datasets import make_blobs
 import logging
-import json
 
 
 def register(registry):
@@ -75,6 +74,24 @@ class RandomBulkParamSource(ParamSource):
         self._num_centers = params.get("num_centers", 2000)
         self._cluster_std = params.get("cluster_std", 0.5)
         self._centers = _get_cluster_centers(self._dims, self._num_centers)
+        
+        # Support dynamic corpus size configuration
+        self._corpus_size = params.get("corpus_size", "1m")
+        self._num_vectors = self._parse_corpus_size(self._corpus_size)
+        logging.getLogger(__name__).info(f"Corpus size: {self._corpus_size} = {self._num_vectors} vectors")
+    
+    def _parse_corpus_size(self, corpus_size):
+        """Parse corpus size string (e.g., '1m', '10m', '100m', '1b') to number of vectors"""
+        corpus_size_lower = str(corpus_size).lower()
+        if corpus_size_lower.endswith('b'):
+            return int(float(corpus_size_lower[:-1]) * 1_000_000_000)
+        elif corpus_size_lower.endswith('m'):
+            return int(float(corpus_size_lower[:-1]) * 1_000_000)
+        elif corpus_size_lower.endswith('k'):
+            return int(float(corpus_size_lower[:-1]) * 1_000)
+        else:
+            # Assume it's already a number
+            return int(corpus_size)
 
     def partition(self, partition_index, total_partitions):
         return self
@@ -106,37 +123,17 @@ class RandomBulkParamSource(ParamSource):
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
         super().__init__(workload, params, **kwargs)
-        logger = logging.getLogger(__name__)
-        logger.info("=== DEBUG: RandomSearchParamSource __init__ ===")
-        logger.info("Workload: [%s], params: [%s]", workload, params)
-        logger.info("Type of params['body']: %s", type(params.get("body")))
-        logger.info("Value of params['body']: %s", params.get("body"))
-        logger.info("Type of params['detailed-results']: %s", type(params.get("detailed-results")))
-        logger.info("Value of params['detailed-results']: %s", params.get("detailed-results"))
-        
+        logging.getLogger(__name__).info("Workload: [%s], params: [%s]", workload, params)
         self._index_name = params.get('index_name', 'target_index')
         self._dims = params.get("dims", 768)
         self._cache = params.get("cache", False)
         self._top_k = params.get("k", 100)
         self._field = params.get("field", "target_field")
-        
-        body_param = params.get("body", {})
-        logger.info("Before _parse_body - type: %s, value: %s", type(body_param), body_param)
-        self._query_body = self._parse_body(body_param)
-        logger.info("After _parse_body - type: %s, value: %s", type(self._query_body), self._query_body)
-        
+        self._query_body = params.get("body", {})
         self._detailed_results = params.get("detailed-results", False)
         self._num_centers = params.get("num_centers", 2000)
         self._cluster_std = params.get("cluster_std", 0.5)
         self._centers = _get_cluster_centers(self._dims, self._num_centers)
-        
-    def _parse_body(self, body_param):
-        if isinstance(body_param, str):
-            try:
-                return json.loads(body_param)
-            except json.JSONDecodeError:
-                return {}
-        return body_param
 
     def partition(self, partition_index, total_partitions):
         return self
@@ -152,13 +149,7 @@ class RandomSearchParamSource(ParamSource):
         query_vec = query_vec[0].tolist()
         query = self.generate_knn_query(query_vec)
         query.update(self._query_body)
-        
-        result = {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
-        
-        # Log the JSON representation of the body
-        logging.getLogger(__name__).info("Query body as JSON: %s", json.dumps(query, indent=2))
-        
-        return result
+        return {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
 
     def generate_knn_query(self, query_vector):
         return {

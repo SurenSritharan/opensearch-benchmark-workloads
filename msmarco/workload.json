@@ -41,7 +41,7 @@
             "bulk_size": 1000,
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
           },
-          "clients": 8
+          "clients": {{ target_index_bulk_indexing_clients | default(8) }}
         }
       ]
     },
@@ -72,7 +72,7 @@
             "bulk_size": 1000,
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
           },
-          "clients": 8
+          "clients": {{ target_index_bulk_indexing_clients | default(8) }}
         },
         {
           "name": "refresh-index",
@@ -186,8 +186,13 @@
             "mode": "{{ mode | default('in_memory') }}"
             },
           "clients": {{ search_clients | default(1) }},
+          {% if time_period is defined %}
+          "warmup-time-period": {{ warmup_time_period | default(60) }},
+          "time-period": {{ time_period }}
+          {% else %}
           "warmup-iterations": {{ warmup_iterations | default(0) }},
-          "iterations": 1000
+          "iterations": {{ iterations | default(1000) }}
+          {% endif %}
         }
       ]
     }
