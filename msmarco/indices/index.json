@@ -17,22 +17,14 @@
         {%- if refresh_interval is defined %}
         ,"refresh_interval": "{{ refresh_interval }}"
         {%- endif %}
-        {%- if max_merged_segment is defined or segments_per_tier is defined or floor_segment is defined %}
-        ,"merge": {
-          "policy": {
-            {%- if max_merged_segment is defined %}
-            "max_merged_segment": "{{ max_merged_segment }}"
-            {%- endif %}
-            {%- if segments_per_tier is defined %}
-            {%- if max_merged_segment is defined %},{% endif %}
-            "segments_per_tier": {{ segments_per_tier }}
-            {%- endif %}
-            {%- if floor_segment is defined %}
-            {%- if max_merged_segment is defined or segments_per_tier is defined %},{% endif %}
-            "floor_segment": "{{ floor_segment }}"
-            {%- endif %}
-          }
-        }
+        {%- if max_merged_segment is defined %}
+        ,"merge.policy.max_merged_segment": "{{ max_merged_segment }}"
+        {%- endif %}
+        {%- if segments_per_tier is defined %}
+        ,"merge.policy.segments_per_tier": {{ segments_per_tier }}
+        {%- endif %}
+        {%- if floor_segment is defined %}
+        ,"merge.policy.floor_segment": "{{ floor_segment }}"
         {%- endif %}
         {%- if hnsw_ef_search is defined and hnsw_ef_search %}
         ,"knn.algo_param.ef_search": {{ hnsw_ef_search }}
