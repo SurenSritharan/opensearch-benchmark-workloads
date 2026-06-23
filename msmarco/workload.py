@@ -40,23 +40,6 @@ class MsMarcoFvecBulkSource:
             print(f"Limiting to {max_possible} vectors")
             self.total_docs = max_possible
     
-    def _parse_corpus_size(self, corpus_size):
-        """Parse corpus size string (e.g., '1m', '10m', '100m', '1b') to number of vectors"""
-        corpus_size_str = str(corpus_size).lower()
-        try:
-            if corpus_size_str.endswith('b'):
-                return int(float(corpus_size_str[:-1]) * 1_000_000_000)
-            elif corpus_size_str.endswith('m'):
-                return int(float(corpus_size_str[:-1]) * 1_000_000)
-            elif corpus_size_str.endswith('k'):
-                return int(float(corpus_size_str[:-1]) * 1_000)
-            else:
-                # Try parsing as raw number
-                return int(corpus_size_str)
-        except (ValueError, AttributeError):
-            print(f"WARNING: Could not parse corpus_size '{corpus_size}', using file size")
-            return self.file_size // self.vector_size_bytes
-
     def partition(self, client_index, total_clients):
         # Segmenting file chunks cleanly across multi-client GKE pod deployments
         return MsMarcoFvecPartition(self, client_index, total_clients)

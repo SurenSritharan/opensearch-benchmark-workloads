@@ -144,7 +144,7 @@
             "k": {{ query_k | default(10) }},
             "body": "{{ query_body | safe }}"
           },
-          "clients": {{ search_clients }},
+          "clients": {{ search_clients | default(1) }},
           {% if time_period is defined %}
           "warmup-time-period": {{ warmup_time_period | default(60) }},
           "time-period": {{ time_period }}
