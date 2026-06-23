@@ -11,7 +11,7 @@
         {%- if target_index_replica_shards is defined %}
         ,"number_of_replicas": {{ target_index_replica_shards }}
         {%- endif %}
-        {%- if translog_flush_threshold_size is defined %}
+        {%- if translog_flush_threshold_size is defined and translog_flush_threshold_size %}
         ,"translog.flush_threshold_size": "{{ translog_flush_threshold_size }}"
         {%- endif %}
         {%- if refresh_interval is defined %}
