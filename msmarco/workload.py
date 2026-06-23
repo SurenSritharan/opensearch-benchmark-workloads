@@ -24,20 +24,12 @@ class MsMarcoFvecBulkSource:
         
         self.file_size = os.path.getsize(self.file_path)
         
-        # Support dynamic corpus size - can be overridden by num_vectors or corpus_size param
-        # Priority: num_vectors > corpus_size > file size
+        # Support explicit vector count; otherwise fall back to file size only.
         self.total_docs = params.get("num_vectors")
         
         if self.total_docs is None:
-            # Try corpus_size parameter
-            corpus_size = params.get("corpus_size")
-            if corpus_size is not None:
-                self.total_docs = self._parse_corpus_size(corpus_size)
-                print(f"Using corpus_size '{corpus_size}': {self.total_docs} vectors")
-            else:
-                # Fall back to file size
-                self.total_docs = self.file_size // self.vector_size_bytes
-                print(f"Calculated total_docs from file size: {self.total_docs}")
+            self.total_docs = self.file_size // self.vector_size_bytes
+            print(f"Calculated total_docs from file size: {self.total_docs}")
         else:
             print(f"Using specified num_vectors: {self.total_docs}")
         

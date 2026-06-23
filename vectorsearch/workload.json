@@ -19,7 +19,7 @@
       "target-index": "{{ target_index_name }}",
       "documents": [
         {
-          "source-file": "documents-{{ source_file_size | default(corpus_size) }}.hdf5.bz2",
+          "source-file": "documents-{{ corpus_size | default('1m') }}.hdf5.bz2",
           "source-format": "hdf5",
           "document-count": {{ num_vectors | default(1000000) }}
         }

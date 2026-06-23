@@ -2,8 +2,8 @@
   "description": "High-Performance Binary MSMARCO Cohere Ingestion Workload",
   "indices": [
     {
-      "name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
-      "body": "{{ target_index_body | default('indices/index.json') }}"
+      "name": "{{ target_index_name }}",
+      "body": "{{ target_index_body }}"
     }
   ],
   "test_procedures": [
@@ -16,13 +16,13 @@
           "operation": {
             "operation-type": "delete-index",
             "only-if-exists": true,
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
+            "index": "{{ target_index_name }}"
           }
         },
         {
           "operation": {
             "operation-type": "create-index",
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
+            "index": "{{ target_index_name }}"
           }
         }
       ]
@@ -37,11 +37,12 @@
           "operation": {
             "operation-type": "bulk",
             "param-source": "msmarco-fvec-bulk-source",
-            "file_path": "{{ target_index_bulk_index_data_set_path | default('/datasets/msmarco/cohere_msmarco_base_1m.fvec') }}",
-            "bulk_size": {{ target_index_bulk_size | default(1000) }},
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
+            "file_path": "{{ target_index_bulk_index_data_set_path }}",
+            "num_vectors": {{ num_vectors }},
+            "bulk_size": {{ target_index_bulk_size }},
+            "index": "{{ target_index_name }}"
           },
-          "clients": {{ target_index_bulk_indexing_clients | default(8) }}
+          "clients": {{ target_index_bulk_indexing_clients }}
         }
       ]
     },
@@ -54,13 +55,13 @@
           "operation": {
             "operation-type": "delete-index",
             "only-if-exists": true,
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
+            "index": "{{ target_index_name }}"
           }
         },
         {
           "operation": {
             "operation-type": "create-index",
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
+            "index": "{{ target_index_name }}"
           }
         },
         {
@@ -68,25 +69,26 @@
           "operation": {
             "operation-type": "bulk",
             "param-source": "msmarco-fvec-bulk-source",
-            "file_path": "{{ target_index_bulk_index_data_set_path | default('/datasets/msmarco/cohere_msmarco_base_1m.fvec') }}",
-            "bulk_size": {{ target_index_bulk_size | default(1000) }},
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
+            "file_path": "{{ target_index_bulk_index_data_set_path }}",
+            "num_vectors": {{ num_vectors }},
+            "bulk_size": {{ target_index_bulk_size }},
+            "index": "{{ target_index_name }}"
           },
-          "clients": {{ target_index_bulk_indexing_clients | default(8) }}
+          "clients": {{ target_index_bulk_indexing_clients }}
         },
         {
           "name": "refresh-index",
           "operation": {
             "operation-type": "refresh",
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
+            "index": "{{ target_index_name }}"
           }
         },
         {
           "name": "force-merge",
               "operation": {
                 "operation-type": "force-merge",
-                "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
-                "max-num-segments": {{ target_index_max_num_segments | default(1) }},
+                "index": "{{ target_index_name }}",
+                "max-num-segments": {{ target_index_max_num_segments }},
                 "request-timeout": 7200
               }
         }
@@ -100,8 +102,8 @@
         {
           "operation": {
             "operation-type": "force-merge",
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
-            "max-num-segments": {{ target_index_max_num_segments | default(1) }},
+            "index": "{{ target_index_name }}",
+            "max-num-segments": {{ target_index_max_num_segments }},
             "request-timeout": 7200
           }
         }
@@ -115,7 +117,7 @@
         {
           "operation": {
             "operation-type": "refresh",
-            "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
+            "index": "{{ target_index_name }}",
             "request-timeout": 7200
           }
         }
@@ -132,59 +134,17 @@
             "name": "vector-search-prod-queries",
             "operation-type": "vector-search",
             "param-source": "random-vector-search-param-source",
-            "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
+            "index_name": "{{ target_index_name }}",
             "detailed-results": true,
-            "field": "{{ target_field_name | default('vector') }}",
+            "field": "{{ target_field_name }}",
             "ground_truth_file": "{{ ground_truth_file }}",
             "queries_file": "{{ queries_file }}",
             "id-field-name": "{{ id_field_name | default('_id') }}",
             "repetitions": {{ number_of_repetitions | default(1) }},
-            "dims": {{ target_index_dimension | default(1024) }},
             "k": {{ query_k | default(10) }},
-            "method_name": "{{ method_name | default('disk_ann') }}",
-            "engine": "{{ engine | default('jvector') }}",
-            "space_type": "{{ space_type | default('cosinesimil') }}",
-            "body": "{{ query_body | default({}) | safe }}",
-            "mode": "{{ mode | default('in_memory') }}"
+            "body": "{{ query_body | safe }}"
           },
-          "clients": {{ search_clients | default(1) }},
-          {% if time_period is defined %}
-          "warmup-time-period": {{ warmup_time_period | default(60) }},
-          "time-period": {{ time_period }}
-          {% else %}
-          "warmup-iterations": {{ warmup_iterations | default(0) }},
-          "iterations": {{ iterations | default(1000) }}
-          {% endif %}
-        }
-      ]
-    },
-    {
-      "name": "search",
-      "default": false,
-      "description": "Perform only vector search on previously indexed cluster, skipping warmup-indices task.",
-      "schedule": [
-        {
-          "name": "search-prod-queries",
-          "operation": {
-            "name": "search-prod-queries",
-            "operation-type": "search",
-            "param-source": "random-vector-search-param-source",
-            "index_name": "{{ target_index_name | default('cohere-msmarco-1024') }}",
-            "detailed-results": true,
-            "field": "{{ target_field_name | default('vector') }}",
-            "query_count": {{ query_count | default(-1) }},
-            "id-field-name": "{{ id_field_name | default('_id') }}",
-            "repetitions": {{ number_of_repetitions | default(1) }},
-            "ef_search": {{ ef_search | default(32) }},
-            "dims": {{ target_index_dimension | default(1024) }},
-            "k": {{ query_k  | default(10) }},
-            "method_name": "{{ method_name | default('disk_ann') }}",
-            "engine": "{{ engine | default('jvector') }}",
-            "space_type": "{{ space_type | default('cosinesimil') }}",
-            "body": "{{ query_body | default({}) | safe }}",
-            "mode": "{{ mode | default('in_memory') }}"
-            },
-          "clients": {{ search_clients | default(1) }},
+          "clients": {{ search_clients }},
           {% if time_period is defined %}
           "warmup-time-period": {{ warmup_time_period | default(60) }},
           "time-period": {{ time_period }}

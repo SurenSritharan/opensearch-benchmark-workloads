@@ -75,23 +75,9 @@ class RandomBulkParamSource(ParamSource):
         self._cluster_std = params.get("cluster_std", 0.5)
         self._centers = _get_cluster_centers(self._dims, self._num_centers)
         
-        # Support dynamic corpus size configuration
-        self._corpus_size = params.get("corpus_size", "1m")
-        self._num_vectors = self._parse_corpus_size(self._corpus_size)
-        logging.getLogger(__name__).info(f"Corpus size: {self._corpus_size} = {self._num_vectors} vectors")
-    
-    def _parse_corpus_size(self, corpus_size):
-        """Parse corpus size string (e.g., '1m', '10m', '100m', '1b') to number of vectors"""
-        corpus_size_lower = str(corpus_size).lower()
-        if corpus_size_lower.endswith('b'):
-            return int(float(corpus_size_lower[:-1]) * 1_000_000_000)
-        elif corpus_size_lower.endswith('m'):
-            return int(float(corpus_size_lower[:-1]) * 1_000_000)
-        elif corpus_size_lower.endswith('k'):
-            return int(float(corpus_size_lower[:-1]) * 1_000)
-        else:
-            # Assume it's already a number
-            return int(corpus_size)
+        # Require explicit num_vectors for vectorsearch workloads
+        self._num_vectors = int(params["num_vectors"])
+        logging.getLogger(__name__).info(f"Using explicit num_vectors: {self._num_vectors}")
 
     def partition(self, partition_index, total_partitions):
         return self
