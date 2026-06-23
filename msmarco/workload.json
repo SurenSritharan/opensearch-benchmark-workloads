@@ -37,8 +37,8 @@
           "operation": {
             "operation-type": "bulk",
             "param-source": "msmarco-fvec-bulk-source",
-            "file_path": "/datasets/msmarco/cohere_msmarco_base.fvec",
-            "bulk_size": 1000,
+            "file_path": "{{ target_index_bulk_index_data_set_path | default('/datasets/msmarco/cohere_msmarco_base_1m.fvec') }}",
+            "bulk_size": {{ target_index_bulk_size | default(1000) }},
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
           },
           "clients": {{ target_index_bulk_indexing_clients | default(8) }}
@@ -68,8 +68,8 @@
           "operation": {
             "operation-type": "bulk",
             "param-source": "msmarco-fvec-bulk-source",
-            "file_path": "/datasets/msmarco/cohere_msmarco_base.fvec",
-            "bulk_size": 1000,
+            "file_path": "{{ target_index_bulk_index_data_set_path | default('/datasets/msmarco/cohere_msmarco_base_1m.fvec') }}",
+            "bulk_size": {{ target_index_bulk_size | default(1000) }},
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}"
           },
           "clients": {{ target_index_bulk_indexing_clients | default(8) }}
@@ -116,7 +116,6 @@
           "operation": {
             "operation-type": "refresh",
             "index": "{{ target_index_name | default('cohere-msmarco-1024') }}",
-            "max-num-segments": {{ target_index_max_num_segments | default(1) }},
             "request-timeout": 7200
           }
         }
