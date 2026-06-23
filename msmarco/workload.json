@@ -38,11 +38,11 @@
             "operation-type": "bulk",
             "param-source": "msmarco-fvec-bulk-source",
             "file_path": "{{ target_index_bulk_index_data_set_path }}",
-            "num_vectors": {{ num_vectors }},
-            "bulk_size": {{ target_index_bulk_size }},
+            "num_vectors": {{ num_vectors | default(1000000) }},
+            "bulk_size": {{ target_index_bulk_size | default(5000) }},
             "index": "{{ target_index_name }}"
           },
-          "clients": {{ target_index_bulk_indexing_clients }}
+          "clients": {{ target_index_bulk_indexing_clients | default(8) }}
         }
       ]
     },
@@ -70,11 +70,11 @@
             "operation-type": "bulk",
             "param-source": "msmarco-fvec-bulk-source",
             "file_path": "{{ target_index_bulk_index_data_set_path }}",
-            "num_vectors": {{ num_vectors }},
-            "bulk_size": {{ target_index_bulk_size }},
+            "num_vectors": {{ num_vectors | default(1000000) }},
+            "bulk_size": {{ target_index_bulk_size | default(500) }},
             "index": "{{ target_index_name }}"
           },
-          "clients": {{ target_index_bulk_indexing_clients }}
+          "clients": {{ target_index_bulk_indexing_clients | default(8) }}
         },
         {
           "name": "refresh-index",
