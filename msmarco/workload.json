@@ -88,7 +88,7 @@
               "operation": {
                 "operation-type": "force-merge",
                 "index": "{{ target_index_name }}",
-                "max-num-segments": {{ target_index_max_num_segments | defaults(1) }},
+                "max-num-segments": {{ target_index_max_num_segments | default(1) }},
                 "request-timeout": 7200
               }
         }
@@ -103,7 +103,7 @@
           "operation": {
             "operation-type": "force-merge",
             "index": "{{ target_index_name }}",
-            "max-num-segments": {{ target_index_max_num_segments | defaults(1) }},
+            "max-num-segments": {{ target_index_max_num_segments | default(1) }},
             "request-timeout": 7200
           }
         }
