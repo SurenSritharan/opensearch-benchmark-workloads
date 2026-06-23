@@ -1,10 +1,12 @@
 {
   "description": "High-Performance Binary MSMARCO Cohere Ingestion Workload",
   "indices": [
+    {% if test_procedure in ["create-index-only"] %}
     {
       "name": "{{ target_index_name }}",
       "body": "{{ target_index_body | default('indices/index.json')}}"
     }
+    {% endif %}
   ],
   "test_procedures": [
     {
