@@ -1,0 +1,38 @@
+{
+  "name": "vector-search-random",
+  "description": "Vector search using synthetic make_blobs queries — no corpus file or ground truth required",
+  "default": false,
+  "schedule": [
+    {% if engine is not defined or engine != "jvector" %}
+    {
+      "name": "warmup-indices",
+      "operation": "warmup-indices",
+      "index": "{{ target_index_name | default('target_index') }}"
+    },
+    {% endif %}
+    {
+      "operation": {
+        "name": "random-vector-search",
+        "operation-type": "bulk",
+        "param-source": "random-vector-search-param-source",
+        "index_name": "{{ target_index_name | default('target_index') }}",
+        "field": "{{ target_field_name | default('target_field') }}",
+        "dims": {{ target_index_dimension | default(768) }},
+        "k": {{ query_k | default(10) }},
+        "detailed-results": true,
+        "cache": {{ query_cache | default(false) | tojson }},
+        "num_centers": {{ num_centers | default(2000) }},
+        "cluster_std": {{ cluster_std | default(0.5) }},
+        "body": {{ query_body | default({}) | tojson }}
+      },
+      "clients": {{ search_clients | default(1) }},
+      {% if time_period is defined %}
+      "warmup-time-period": {{ warmup_time_period | default(60) }},
+      "time-period": {{ time_period }}
+      {% else %}
+      "warmup-iterations": {{ warmup_iterations | default(0) }},
+      "iterations": {{ iterations | default(1000) }}
+      {% endif %}
+    }
+  ]
+}
