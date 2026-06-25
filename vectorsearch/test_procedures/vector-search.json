@@ -1,5 +1,5 @@
 {
-    "name": "search-only",
+    "name": "vector-search",
     "default": true,
     "description": "Perform only vector search on previously indexed cluster, skipping warmup-indices task.",
     "schedule": [
