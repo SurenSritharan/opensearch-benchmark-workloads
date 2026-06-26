@@ -8,7 +8,7 @@
   ],
   "test_procedures": [
     {
-      "name": "create-index-only",
+      "name": "create-index",
       "description": "Create index without loading data",
       "default": false,
       "schedule": [
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "name": "bulk-ingest-only",
+      "name": "bulk-ingest-data",
       "description": "Load data into existing index",
       "default": false,
       "schedule": [
@@ -64,7 +64,7 @@
       ]
     },
     {
-      "name": "refresh",
+      "name": "refresh-index",
       "description": "Refresh indexes",
       "default": false,
       "schedule": [
