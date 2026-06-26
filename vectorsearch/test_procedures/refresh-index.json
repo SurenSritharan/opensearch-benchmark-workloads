@@ -1,5 +1,5 @@
 {
-    "name": "refresh",
+    "name": "refresh-index",
     "description": "Refresh index",
     "default": false,
     "schedule": [
