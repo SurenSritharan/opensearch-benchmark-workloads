@@ -1,5 +1,5 @@
 {
-  "name": "create-index-only",
+  "name": "create-index",
   "description": "Create index without loading data",
   "default": false,
   "schedule": [

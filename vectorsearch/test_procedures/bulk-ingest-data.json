@@ -1,5 +1,5 @@
 {
-  "name": "bulk-ingest-only",
+  "name": "bulk-ingest-data",
   "description": "Load data into existing index using custom-vector-bulk operation",
   "default": false,
   "schedule": [

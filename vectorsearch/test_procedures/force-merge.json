@@ -1,0 +1,18 @@
+{
+    "name": "force-merge",
+    "description": "Force merge index to specified number of segments",
+    "default": false,
+    "schedule": [
+    {
+        "operation": {
+        "operation-type": "force-merge",
+        "index": "{{ target_index_name }}",
+        "request-timeout": {{ target_index_force_merge_timeout | default(7200) }},
+        "mode": "polling",
+        "max-num-segments": {{ target_index_max_num_segments | default(1) }},
+        "include-in-results_publishing": true
+        }
+    }
+    ]
+}
+    
