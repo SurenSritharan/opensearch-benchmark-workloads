@@ -5,7 +5,7 @@
     "include-in-results_publishing": true
 },
 {
-    "name": "force-merge",
+    "name": "force-merge-original",
     "operation-type": "force-merge",
     "request-timeout": {{ target_index_force_merge_timeout | default(7200) }},
     "index": "{{ target_index_name | default('target_index') }}",
