@@ -3,12 +3,14 @@
     "description": "Refresh index",
     "default": false,
     "schedule": [
-    {
-        "name": "refresh-target-index",
-        "operation-type": "refresh",
-        "retries": 100,
-        "index": "{{ target_index_name | default('target_index') }}"
-    }
+        {
+            "operation": {
+                "name": "refresh-target-index",
+                "operation-type": "refresh",
+                "retries": 100,
+                "index": "{{ target_index_name | default('target_index') }}"
+            }
+        }
     ]
 }
     
