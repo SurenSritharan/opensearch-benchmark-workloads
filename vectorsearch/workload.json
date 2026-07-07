@@ -6,10 +6,6 @@
         {
             "name": "{{ target_index_name | default('target_index') }}",
             "body": "{{ target_index_body }}"
-        },
-        {
-            "name": "{{ train_index_name | default('train_index') }}",
-            "body": "{{ train_index_body }}"
         }
     ],
     "corpora": [
