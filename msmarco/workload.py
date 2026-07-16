@@ -127,6 +127,11 @@ class RandomSearchParamSource(ParamSource):
         self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
         self._detailed_results = params.get("detailed-results", True)
         self._ef_search = int(params.get("ef_search", 32))
+        self._oversample_factor = params.get("oversample_factor")
+        self._filter_type = params.get("filter_type")
+        self._filter_body = params.get("filter_body")
+        self._space_type = params.get("space_type", "l2")
+        self._is_nested = "." in self._field  # mirrors params.py NESTED_FIELD_SEPARATOR
         
         # .fvec format: 4 bytes (int32) for dimension + (dims * 4) bytes for float32 data
         self._record_size_bytes = 4 + (self._dims * 4)
@@ -233,6 +238,9 @@ class RandomSearchParamSource(ParamSource):
         # Generate baseline query
         query = self.generate_knn_query(query_vec)
         
+        if self._filter_type == "post_filter":
+            query["post_filter"] = self._filter_body
+        
         # Merge dynamic body overrides if they exist
         if self._query_body:
             # We copy to prevent cross-pollination between iterations
@@ -268,15 +276,75 @@ class RandomSearchParamSource(ParamSource):
                 base[key] = value
 
     def generate_knn_query(self, query_vector):
-        return {
+        # efficient filter goes inside the knn body
+        efficient_filter = self._filter_body if self._filter_type == "efficient" else None
+
+        knn_body = {
+            "vector": query_vector,
+            "k": self._top_k,
+        }
+
+        if efficient_filter:
+            knn_body["filter"] = efficient_filter
+
+        if self._ef_search:
+            knn_body["method_parameters"] = {"ef_search": self._ef_search}
+
+        if self._oversample_factor:
+            knn_body["rescore"] = {"oversample_factor": self._oversample_factor}
+
+        knn_search_query = {
             "query": {
                 "knn": {
-                    self._field: {
-                        "vector": query_vector,
-                        "k": self._top_k,
-                        "method_parameters": {"ef_search": self._ef_search }
-                    }
+                    self._field: knn_body
                 }
             }
         }
+
+        # nested field: wrap in a nested query
+        if self._is_nested:
+            outer_field = self._field.split(".")[0]
+            return {
+                "query": {
+                    "nested": {
+                        "path": outer_field,
+                        "query": {"knn": {self._field: knn_body}}
+                    }
+                }
+            }
+
+        # post_filter is handled in params(), not here
+        if self._filter_type and not efficient_filter and self._filter_type != "post_filter":
+            return self._knn_query_with_filter(query_vector, knn_search_query)
+
+        return knn_search_query
+
+    def _knn_query_with_filter(self, query_vector, knn_query):
+        if self._filter_type == "script":
+            return {
+                "query": {
+                    "script_score": {
+                        "query": {"bool": {"filter": self._filter_body}},
+                        "script": {
+                            "source": "knn_score",
+                            "lang": "knn",
+                            "params": {
+                                "field": self._field,
+                                "query_value": query_vector,
+                                "space_type": self._space_type
+                            }
+                        }
+                    }
+                }
+            }
+        if self._filter_type == "boolean":
+            return {
+                "query": {
+                    "bool": {
+                        "filter": self._filter_body,
+                        "must": [knn_query["query"]]
+                    }
+                }
+            }
+        raise ValueError(f"Unsupported filter_type: {self._filter_type!r}")
 
