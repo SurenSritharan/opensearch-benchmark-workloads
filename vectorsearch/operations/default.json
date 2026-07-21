@@ -146,10 +146,10 @@
     ,"ef_search": {{ hnsw_ef_search }}
     {% endif %}
     {% if oversample_factor is defined %}
-    "oversample_factor": {{ oversample_factor }},
+    ,"oversample_factor": {{ oversample_factor }}
     {% endif %}
     {% if overquery_factor is defined %}
-    "overquery_factor": {{ overquery_factor }},
+    ,"overquery_factor": {{ overquery_factor }}
     {% endif %}
     ,"index_name": "{{ target_index_name | default('target_index') }}",
     "detailed-results": {{ detailed_results | default(true) | tojson }}
