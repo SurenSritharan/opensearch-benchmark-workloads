@@ -23,6 +23,12 @@
         "cache": {{ query_cache | default(false) | tojson }},
         "num_centers": {{ num_centers | default(2000) }},
         "cluster_std": {{ cluster_std | default(0.5) }},
+        {% if oversample_factor is defined %}
+        "oversample_factor": {{ oversample_factor }},
+        {% endif %}
+        {% if overquery_factor is defined %}
+        "overquery_factor": {{ overquery_factor }},
+        {% endif %}
         "body": {{ query_body | default({}) | tojson }}
       },
       "clients": {{ search_clients | default(1) }},

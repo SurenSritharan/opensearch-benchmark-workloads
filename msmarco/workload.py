@@ -127,6 +127,7 @@ class RandomSearchParamSource(ParamSource):
         self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
         self._detailed_results = params.get("detailed-results", True)
         self._ef_search = int(params.get("ef_search", 32))
+        self._overquery_factor = params.get("overquery_factor")
         self._oversample_factor = params.get("oversample_factor")
         self._filter_type = params.get("filter_type")
         self._filter_body = params.get("filter_body")
@@ -211,6 +212,7 @@ class RandomSearchParamSource(ParamSource):
         partition._query_indices = np.arange(self._num_queries)
         partition._rng.shuffle(partition._query_indices)
         partition._current_idx = 0
+        partition._overquery_factor = self._overquery_factor
         return partition
 
     def params(self):
@@ -287,8 +289,13 @@ class RandomSearchParamSource(ParamSource):
         if efficient_filter:
             knn_body["filter"] = efficient_filter
 
-        if self._ef_search:
-            knn_body["method_parameters"] = {"ef_search": self._ef_search}
+        if self._ef_search or self._overquery_factor:
+            method_params = {}
+            if self._ef_search:
+                method_params["ef_search"] = self._ef_search
+            if self._overquery_factor:
+                method_params["overquery_factor"] = self._overquery_factor
+            knn_body["method_parameters"] = method_params
 
         if self._oversample_factor:
             knn_body["rescore"] = {"oversample_factor": self._oversample_factor}

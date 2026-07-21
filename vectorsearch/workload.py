@@ -120,6 +120,8 @@ class RandomSearchParamSource(ParamSource):
         self._num_centers = params.get("num_centers", 2000)
         self._cluster_std = params.get("cluster_std", 0.5)
         self._centers = _get_cluster_centers(self._dims, self._num_centers)
+        self._ef_search = params.get("ef_search")
+        self._overquery_factor = params.get("overquery_factor")
 
     def partition(self, partition_index, total_partitions):
         return self
@@ -138,13 +140,21 @@ class RandomSearchParamSource(ParamSource):
         return {"index": self._index_name, "cache": self._cache, "size": self._top_k, "body": query, "detailed-results": self._detailed_results}
 
     def generate_knn_query(self, query_vector):
+        knn_body = {
+            "vector": query_vector,
+            "k": self._top_k,
+        }
+        if self._ef_search or self._overquery_factor:
+            method_params = {}
+            if self._ef_search:
+                method_params["ef_search"] = self._ef_search
+            if self._overquery_factor:
+                method_params["overquery_factor"] = self._overquery_factor
+            knn_body["method_parameters"] = method_params
         return {
             "query": {
                 "knn": {
-                    self._field: {
-                        "vector": query_vector,
-                        "k": self._top_k
-                    }
+                    self._field: knn_body
                 }
             }
         }

@@ -35,6 +35,9 @@
                 {% if oversample_factor is defined %}
                 "oversample_factor": {{ oversample_factor }},
                 {% endif %}
+                {% if overquery_factor is defined %}
+                "overquery_factor": {{ overquery_factor }},
+                {% endif %}
                 "body": {{ query_body | default ({}) | tojson }},
                 "filter_body": {{ filter_body | default ({}) | tojson }},
                 "filter_type": {{filter_type  | default ({}) | tojson }},

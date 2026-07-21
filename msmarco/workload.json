@@ -106,6 +106,9 @@
             {% if oversample_factor is defined %}
             "oversample_factor": {{ oversample_factor }},
             {% endif %}
+            {% if oversample_factor is defined %}
+            "overquery_factor": {{ overquery_factor }},
+            {% endif %}
             "body": "{{ query_body | safe }}"
           },
           "clients": {{ search_clients | default(1) }},
