@@ -14,7 +14,8 @@
         "num_vectors": {{ num_vectors }},
         "dims": {{ target_index_dimension | default(768) }},
         "num_centers": {{ num_centers | default(2000) }},
-        "cluster_std": {{ cluster_std | default(0.5) }}
+        "cluster_std": {{ cluster_std | default(0.5) }},
+        "detailed-results": {{ detailed_results | default(false) | tojson }}
       },
       "clients": {{ target_index_bulk_indexing_clients | default(1) }}
     }
