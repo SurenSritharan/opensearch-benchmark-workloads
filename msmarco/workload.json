@@ -35,12 +35,13 @@
         {
           "name": "bulk-ingestion-phase",
           "operation": {
-            "operation-type": "bulk",
+            "operation-type": "bulk-vector-data-set",
             "param-source": "msmarco-fvec-bulk-source",
             "file_path": "{{ target_index_bulk_index_data_set_path }}",
             "num_vectors": {{ num_vectors | default(1000000) }},
             "bulk_size": {{ target_index_bulk_size | default(5000) }},
-            "index": "{{ target_index_name }}"
+            "index": "{{ target_index_name }}",
+            "detailed-results": {{ detailed_results | default(false) | tojson }}
           },
           "clients": {{ target_index_bulk_indexing_clients | default(8) }}
         }
