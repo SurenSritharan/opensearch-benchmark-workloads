@@ -45,7 +45,7 @@
             "operation-type": "put-settings",
             "body": {
               "persistent": {
-                "indices.memory.indexing_pressure.limit": {{ indexing_pressure_limit | default(0.20) }}
+                "indexing_pressure.memory.limit": "{{ indexing_pressure_limit | default('20%') }}"
               }
             }
           }
@@ -71,7 +71,7 @@
             "operation-type": "put-settings",
             "body": {
               "persistent": {
-                "indices.memory.indexing_pressure.limit": null
+                "indexing_pressure.memory.limit": null
               }
             }
           }
