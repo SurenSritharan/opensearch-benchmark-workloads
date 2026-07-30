@@ -24,6 +24,26 @@
     "operation-type": "delete-knn-model"   
 },
 {
+    "name": "update-cluster-settings-for-indexing-pressure",
+    "operation-type": "put-settings",
+    "body": {
+      "persistent": {
+        "indices.memory.indexing_pressure.limit": {{ indexing_pressure_limit | default(0.20) }}
+      }
+    },
+    "include-in-reporting": false
+},
+{
+    "name": "reset-cluster-settings-for-indexing-pressure",
+    "operation-type": "put-settings",
+    "body": {
+      "persistent": {
+        "indices.memory.indexing_pressure.limit": null
+      }
+    },
+    "include-in-reporting": false
+},
+{
     "name": "update-cluster-settings-for-knn-prefetch",
     "operation-type": "put-settings",
     "body": {

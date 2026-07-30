@@ -33,6 +33,16 @@
       "default": false,
       "schedule": [
         {
+          "operation": {
+            "operation-type": "put-settings",
+            "body": {
+              "persistent": {
+                "indices.memory.indexing_pressure.limit": {{ indexing_pressure_limit | default(0.20) }}
+              }
+            }
+          }
+        },
+        {
           "name": "bulk-ingestion-phase",
           "operation": {
             "operation-type": "bulk-vector-data-set",
@@ -41,9 +51,20 @@
             "num_vectors": {{ num_vectors | default(1000000) }},
             "bulk_size": {{ target_index_bulk_size | default(5000) }},
             "index": "{{ target_index_name }}",
-            "detailed-results": {{ detailed_results | default(false) | tojson }}
+            "detailed-results": {{ detailed_results | default(false) | tojson }},
+            "request-timeout": {{ bulk_request_timeout | default(600) }}
           },
           "clients": {{ target_index_bulk_indexing_clients | default(8) }}
+        },
+        {
+          "operation": {
+            "operation-type": "put-settings",
+            "body": {
+              "persistent": {
+                "indices.memory.indexing_pressure.limit": null
+              }
+            }
+          }
         }
       ]
     },
