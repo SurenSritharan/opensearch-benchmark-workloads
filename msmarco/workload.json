@@ -40,6 +40,7 @@
       "default": false,
       "schedule": [
         {
+          "name": "set-indexing-pressure",
           "operation": {
             "operation-type": "put-settings",
             "body": {
@@ -65,6 +66,7 @@
           "clients": {{ target_index_bulk_indexing_clients | default(8) }}
         },
         {
+          "name": "reset-indexing-pressure",
           "operation": {
             "operation-type": "put-settings",
             "body": {
