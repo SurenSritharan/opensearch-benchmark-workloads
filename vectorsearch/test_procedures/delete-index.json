@@ -1,11 +1,12 @@
 {
-  "name": "create-index",
-  "description": "Create index without loading data",
+  "name": "delete-index",
+  "description": "Delete index if it exists",
   "default": false,
   "schedule": [
     {
       "operation": {
-        "operation-type": "create-index",
+        "operation-type": "delete-index",
+        "only-if-exists": true,
         "index": "{{ target_index_name | default('cohere-1m-768') }}"
       }
     }
