@@ -19,7 +19,8 @@
         "num_centers": {{ num_centers | default(2000) }},
         "cluster_std": {{ cluster_std | default(0.5) }},
         "detailed-results": {{ detailed_results | default(false) | tojson }},
-        "request-timeout": {{ bulk_request_timeout | default(600) }}
+        "request-timeout": {{ bulk_request_timeout | default(600) }},
+        "retries": {{ bulk_retries | default(3) }}
       },
       "clients": {{ target_index_bulk_indexing_clients | default(1) }}
     },
