@@ -18,6 +18,7 @@ class MsMarcoFvecBulkSource:
         self.bulk_size = params.get("bulk_size", 1000)
         self.index_name = params.get("index")
         self.detailed_results = params.get("detailed-results", False)
+        self.request_timeout = params.get("request-timeout", None)
         
         # Fixed MS MARCO Cohere structural variables
         self.dim = 1024
@@ -51,6 +52,7 @@ class MsMarcoFvecPartition:
         self.bulk_size = source.bulk_size
         self.index_name = source.index_name
         self.detailed_results = source.detailed_results
+        self.request_timeout = source.request_timeout
         self.vector_size_bytes = source.vector_size_bytes
         self.dim = source.dim
         self.infinite = False
@@ -108,7 +110,7 @@ class MsMarcoFvecPartition:
             self.f.close()
             raise StopIteration
             
-        return {
+        result = {
             "bulk-size": len(body) // 2,
             "unit": "docs",
             "action-metadata-present": True,
@@ -116,6 +118,9 @@ class MsMarcoFvecPartition:
             "index": self.index_name,
             "detailed-results": self.detailed_results
         }
+        if self.request_timeout is not None:
+            result["request-timeout"] = self.request_timeout
+        return result
         
 class RandomSearchParamSource(ParamSource):
     def __init__(self, workload, params, **kwargs):
