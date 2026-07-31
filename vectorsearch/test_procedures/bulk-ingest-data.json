@@ -4,9 +4,6 @@
   "default": false,
   "schedule": [
     {
-      "operation": "update-cluster-settings-for-indexing-pressure"
-    },
-    {
       "operation": {
         "name": "custom-vector-bulk",
         "operation-type": "bulk-vector-data-set",
@@ -24,9 +21,6 @@
         "retries": {{ bulk_retries | default(3) }}
       },
       "clients": {{ target_index_bulk_indexing_clients | default(1)}}
-    },
-    {
-      "operation": "reset-cluster-settings-for-indexing-pressure"
     }
   ]
 }

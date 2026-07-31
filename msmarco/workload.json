@@ -40,17 +40,6 @@
       "default": false,
       "schedule": [
         {
-          "name": "set-indexing-pressure",
-          "operation": {
-            "operation-type": "put-settings",
-            "body": {
-              "persistent": {
-                "indexing_pressure.memory.limit": "{{ indexing_pressure_limit | default('20%') }}"
-              }
-            }
-          }
-        },
-        {
           "name": "bulk-ingestion-phase",
           "operation": {
             "operation-type": "bulk-vector-data-set",
@@ -64,17 +53,6 @@
             "retries": {{ bulk_retries | default(3) }}
           },
           "clients": {{ target_index_bulk_indexing_clients | default(8) }}
-        },
-        {
-          "name": "reset-indexing-pressure",
-          "operation": {
-            "operation-type": "put-settings",
-            "body": {
-              "persistent": {
-                "indexing_pressure.memory.limit": null
-              }
-            }
-          }
         }
       ]
     },
