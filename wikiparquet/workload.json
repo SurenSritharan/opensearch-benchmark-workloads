@@ -6,12 +6,12 @@
 {%- else -%}
   {%- set _count_label = _n | string -%}
 {%- endif -%}
-{%- set _default_index = 'cohere-wikipedia-parquet-' + _count_label -%}
-{%- set _default_gt_file = 'wikiparquet-queries-gt-' + _count_label + '.json' -%}
+{%- set _default_index = 'parquet-vectors-' + _count_label -%}
+{%- set _default_gt_file = 'parquet-vectors-gt-' + _count_label + '.json' -%}
 {%- set _index = target_index_name | default(_default_index) -%}
 {%- set _gt_file = queries_file | default(_default_gt_file) -%}
 {
-  "description": "Cohere Wikipedia Parquet Vector Benchmark Workload",
+  "description": "Parquet Vector Benchmark Workload",
   "indices": [
     {
       "name": "{{ _index }}",
@@ -58,9 +58,16 @@
             "param-source": "parquet-bulk-reader",
             "index": "{{ _index }}",
             "target_vector_count": {{ _n }},
-            "batch_size": {{ target_index_bulk_size | default(1000) }},
+            "batch_size": {{ target_index_batch_size | default(5000) }},
+            "bulk_size": {{ target_index_bulk_size | default(1000) }},
             "num_queries": {{ num_queries | default(1000) }},
             "queries_file": "{{ _gt_file }}",
+            {%- if hf_repo_id is defined %}
+            "hf_repo_id": "{{ hf_repo_id }}",
+            {%- endif %}
+            {%- if hf_dataset_dir is defined %}
+            "hf_dataset_dir": "{{ hf_dataset_dir }}",
+            {%- endif %}
             "detailed-results": {{ detailed_results | default(false) | tojson }}
           },
           "clients": {{ target_index_bulk_indexing_clients | default(1) }}
