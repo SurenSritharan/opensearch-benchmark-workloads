@@ -63,7 +63,7 @@
         "method": {
           "name": "{{ method_name | default('hnsw') }}",
           "space_type": "{{ target_index_space_type | default('innerproduct') }}",
-          "engine": "{{ engine | default('faiss') }}",
+          "engine": "{{ engine | default('jvector') }}",
           "parameters": {
             {%- set prepend_comma = false %}
             {%- if hnsw_ef_search is defined and hnsw_ef_search %}
