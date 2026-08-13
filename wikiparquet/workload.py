@@ -226,6 +226,7 @@ class VectorSearchParamReader:
         self.index_name = params.get("index", default_index_name)
         self.k = params.get("k", 10)
         self.ef_search = params.get("ef_search", 64)
+        self.field_name = params.get("target_field_name", "emb")
         self.cursor = 0
 
         # If ingest did not run in this process, load state from disk.
@@ -268,7 +269,7 @@ class VectorSearchParamReader:
             "size": self.k,
             "query": {
                 "knn": {
-                    "emb": {
+                    self.field_name: {
                         "vector": query_item["vector"],
                         "k": self.k,
                     }
@@ -277,8 +278,8 @@ class VectorSearchParamReader:
         }
 
         if self.ef_search:
-            query_payload["ext"] = {
-                "knn": {"method_parameters": {"ef_search": self.ef_search}}
+            query_payload["query"]["knn"][self.field_name]["method_parameters"] = {
+                "ef_search": self.ef_search
             }
 
         # Ground truth for this query — top-100 neighbor doc-id strings ordered
