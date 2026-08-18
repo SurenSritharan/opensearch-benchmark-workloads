@@ -271,10 +271,8 @@ class ParquetBulkParamReader:
             f"Saved {len(queries)} queries and ground truth to {self.queries_file}"
         )
 
-    def __iter__(self):
-        return self
-
-    def __next__(self):
+    def params(self):
+        """Called by OSB each iteration to get the next bulk request dict."""
         # Lazily initialise the generator for the single-client (no partition()) path.
         if self._generator is None:
             self._start_doc = 0
@@ -344,10 +342,8 @@ class VectorSearchParamReader:
         p._cursor = 0
         return p
 
-    def __iter__(self):
-        return self
-
-    def __next__(self):
+    def params(self):
+        """Called by OSB each iteration to get the next search request dict."""
         queries = BENCHMARK_STATE["sample_queries"]
         if not queries:
             raise StopIteration("No queries available in state.")
