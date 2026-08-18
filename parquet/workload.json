@@ -1,0 +1,137 @@
+{%- set _n = num_vectors | default(50000) | int -%}
+{%- if _n >= 1000000 and _n % 1000000 == 0 -%}
+  {%- set _count_label = (_n // 1000000) | string + 'm' -%}
+{%- elif _n >= 1000 and _n % 1000 == 0 -%}
+  {%- set _count_label = (_n // 1000) | string + 'k' -%}
+{%- else -%}
+  {%- set _count_label = _n | string -%}
+{%- endif -%}
+{%- set _default_index = 'parquet-vectors-' + _count_label -%}
+{%- set _default_gt_file = 'parquet-vectors-gt-' + _count_label + '.json' -%}
+{%- set _index = target_index_name | default(_default_index) -%}
+{%- set _gt_file = queries_file | default(_default_gt_file) -%}
+{
+  "description": "Parquet Vector Benchmark Workload",
+  "indices": [
+    {
+      "name": "{{ _index }}",
+      "body": "{{ target_index_body | default('indices/index.json') }}"
+    }
+  ],
+  "test_procedures": [
+    {
+      "name": "delete-index",
+      "description": "Delete the index if it exists",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "delete-index",
+            "only-if-exists": true,
+            "index": "{{ _index }}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "create-index",
+      "description": "Create the index without loading data",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "create-index",
+            "index": "{{ _index }}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bulk-ingest-data",
+      "description": "Stream Parquet files from HuggingFace and bulk-index into OpenSearch",
+      "default": false,
+      "schedule": [
+        {
+          "name": "bulk-ingest-parquet",
+          "operation": {
+            "operation-type": "bulk",
+            "param-source": "parquet-bulk-reader",
+            "index": "{{ _index }}",
+            "target_vector_count": {{ _n }},
+            "batch_size": {{ target_index_batch_size | default(5000) }},
+            "bulk_size": {{ target_index_bulk_size | default(1000) }},
+            "num_queries": {{ num_queries | default(1000) }},
+            "queries_file": "{{ _gt_file }}",
+            {%- if hf_repo_id is defined %}
+            "hf_repo_id": "{{ hf_repo_id }}",
+            {%- endif %}
+            {%- if hf_dataset_dir is defined %}
+            "hf_dataset_dir": "{{ hf_dataset_dir }}",
+            {%- endif %}
+            "detailed-results": {{ detailed_results | default(false) | tojson }}
+          },
+          "clients": {{ target_index_bulk_indexing_clients | default(1) }}
+        }
+      ]
+    },
+    {
+      "name": "force-merge",
+      "description": "Force merge the index to the specified number of segments",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "force-merge",
+            "index": "{{ _index }}",
+            "request-timeout": {{ target_index_force_merge_timeout | default(7200) }},
+            "mode": "polling",
+            "max-num-segments": {{ target_index_max_num_segments | default(1) }},
+            "include-in-results_publishing": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "refresh-index",
+      "description": "Refresh the index",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "refresh",
+            "index": "{{ _index }}",
+            "retries": 100
+          }
+        }
+      ]
+    },
+    {
+      "name": "vector-search",
+      "description": "Run k-NN vector search with ground-truth recall evaluation",
+      "default": true,
+      "schedule": [
+        {
+          "name": "vector-search-queries",
+          "operation": {
+            "operation-type": "vector-search",
+            "param-source": "vector-search-reader",
+            "index": "{{ _index }}",
+            "target_vector_count": {{ _n }},
+            "queries_file": "{{ _gt_file }}",
+            "k": {{ query_k | default(10) }},
+            "ef_search": {{ ef_search | default(64) }},
+            "detailed-results": true
+          },
+          "clients": {{ search_clients | default(1) }},
+          {% if time_period is defined %}
+          "warmup-time-period": {{ warmup_time_period | default(60) }},
+          "time-period": {{ time_period }}
+          {% else %}
+          "warmup-iterations": {{ warmup_iterations | default(0) }},
+          "iterations": {{ iterations | default(1000) }}
+          {% endif %}
+        }
+      ]
+    }
+  ]
+}
