@@ -47,7 +47,7 @@ class ParquetBulkParamReader:
 
     def __init__(self, workload, params):
         self.workload = workload
-        self.params = params
+        self._raw_params = params
         self.batch_size = params.get("batch_size", 5000)   # PyArrow rows per read
         self.bulk_size = params.get("bulk_size", 1000)     # docs per bulk request
         self.target_docs = params.get("target_vector_count", 50000)
@@ -84,7 +84,7 @@ class ParquetBulkParamReader:
         """Return a new reader covering only this client's slice of target_docs."""
         p = ParquetBulkParamReader.__new__(ParquetBulkParamReader)
         p.workload = self.workload
-        p.params = self.params
+        p._raw_params = self._raw_params
         p.batch_size = self.batch_size
         p.bulk_size = self.bulk_size
         p.target_docs = self.target_docs
@@ -203,6 +203,7 @@ class ParquetBulkParamReader:
                             yield {
                                 "body": pending,
                                 "bulk-size": len(pending) // 2,
+                                "unit": "docs",
                                 "action-metadata-present": True,
                                 "index": self.index_name,
                             }
@@ -215,6 +216,7 @@ class ParquetBulkParamReader:
                     yield {
                         "body": pending,
                         "bulk-size": len(pending) // 2,
+                        "unit": "docs",
                         "action-metadata-present": True,
                         "index": self.index_name,
                     }
