@@ -43,6 +43,8 @@ class ParquetBulkParamReader:
     and yields bulk indexing requests to OpenSearch Benchmark.
     """
 
+    infinite = False  # finite — stops after target_vector_count docs
+
     def __init__(self, workload, params):
         self.workload = workload
         self.params = params
@@ -290,6 +292,8 @@ class VectorSearchParamReader:
     one used during ingest — both default to _DEFAULT_QUERIES_FILE and can be
     overridden via the "queries_file" workload parameter.
     """
+
+    infinite = True  # cycles through queries indefinitely for time-period-based search
 
     def __init__(self, workload, params):
         self._params = params
