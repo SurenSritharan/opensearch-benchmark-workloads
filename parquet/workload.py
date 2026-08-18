@@ -398,9 +398,9 @@ class VectorSearchParamReader:
 
 
 def register(registry):
-    registry.register_param_reader(
+    registry.register_param_source(
         "parquet-bulk-reader", ParquetBulkParamReader
     )
-    registry.register_param_reader(
+    registry.register_param_source(
         "vector-search-reader", VectorSearchParamReader
     )
