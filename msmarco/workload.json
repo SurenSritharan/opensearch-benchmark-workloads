@@ -131,6 +131,34 @@
           {% endif %}
         }
       ]
+    },
+    {
+      "name": "enable-replicas",
+      "description": "Re-enable replicas after a no-replica ingest and wait for green cluster health.",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "raw-request",
+            "method": "PUT",
+            "path": "/{{ target_index_name }}/_settings",
+            "body": {
+              "index": {
+                "number_of_replicas": {{ target_index_replica_shards | default(1) }}
+              }
+            }
+          }
+        },
+        {
+          "operation": {
+            "operation-type": "cluster-health",
+            "request-params": {
+              "wait_for_status": "green",
+              "timeout": "300s"
+            }
+          }
+        }
+      ]
     }
   ]
 }
