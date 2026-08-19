@@ -88,6 +88,34 @@
       ]
     },
     {
+      "name": "enable-replicas",
+      "description": "Re-enable replicas after a no-replica ingest and wait for green cluster health.",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "raw-request",
+            "method": "PUT",
+            "path": "/{{ target_index_name }}/_settings",
+            "body": {
+              "index": {
+                "number_of_replicas": {{ target_index_replica_shards | default(1) }}
+              }
+            }
+          }
+        },
+        {
+          "operation": {
+            "operation-type": "cluster-health",
+            "request-params": {
+              "wait_for_status": "green",
+              "timeout": "300s"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "vector-search",
       "default": true,
       "description": "Perform only vector search on previously indexed cluster, skipping warmup-indices task.",
@@ -129,34 +157,6 @@
           "warmup-iterations": {{ warmup_iterations | default(0) }},
           "iterations": {{ iterations | default(1000) }}
           {% endif %}
-        }
-      ]
-    },
-    {
-      "name": "enable-replicas",
-      "description": "Re-enable replicas after a no-replica ingest and wait for green cluster health.",
-      "default": false,
-      "schedule": [
-        {
-          "operation": {
-            "operation-type": "raw-request",
-            "method": "PUT",
-            "path": "/{{ target_index_name }}/_settings",
-            "body": {
-              "index": {
-                "number_of_replicas": {{ target_index_replica_shards | default(1) }}
-              }
-            }
-          }
-        },
-        {
-          "operation": {
-            "operation-type": "cluster-health",
-            "request-params": {
-              "wait_for_status": "green",
-              "timeout": "300s"
-            }
-          }
         }
       ]
     }
