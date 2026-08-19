@@ -303,6 +303,7 @@ class VectorSearchParamReader:
         self.k = params.get("k", 10)
         self.ef_search = params.get("ef_search", 64)
         self.field_name = params.get("target_field_name", "emb")
+        self.operation_type = params.get("operation-type", "vector-search")
         self._cursor = 0
         self._query_indices = None  # set by partition(); None means round-robin
 
@@ -339,6 +340,7 @@ class VectorSearchParamReader:
         p.k = self.k
         p.ef_search = self.ef_search
         p.field_name = self.field_name
+        p.operation_type = self.operation_type
         queries = BENCHMARK_STATE["sample_queries"]
         p._query_indices = list(range(partition_index, len(queries), total_partitions))
         p._cursor = 0
@@ -383,11 +385,10 @@ class VectorSearchParamReader:
         neighbors = gt_ids[: self.k]
 
         return {
+            "operation-type": self.operation_type,
             "index": self.index_name,
             "body": query_payload,
             "query_id": query_item["query_id"],
-            # Top-level "k" and "neighbors" let OSB compute Recall@K natively
-            # without a custom runner — identical to msmarco's RandomSearchParamSource.
             "k": self.k,
             "neighbors": neighbors,
             "detailed-results": self._params.get("detailed-results", True),
