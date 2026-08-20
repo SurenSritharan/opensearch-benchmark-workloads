@@ -132,6 +132,86 @@
           {% endif %}
         }
       ]
+    },
+    {
+      "name": "create-search-pipeline",
+      "description": "Create the normalization-processor search pipeline required for hybrid search",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "raw-request",
+            "method": "PUT",
+            "path": "/_search/pipeline/{{ search_pipeline | default('hybrid-search-pipeline') }}",
+            "body": {
+              "description": "Hybrid search normalization pipeline",
+              "phase_results_processors": [
+                {
+                  "normalization-processor": {
+                    "normalization": {
+                      "technique": "{{ normalization_technique | default('min_max') }}"
+                    },
+                    "combination": {
+                      "technique": "arithmetic_mean",
+                      "parameters": {
+                        "weights": [
+                          {{ bm25_weight | default(0.3) }},
+                          {{ knn_weight  | default(0.7) }}
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "delete-search-pipeline",
+      "description": "Delete the hybrid search pipeline",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "raw-request",
+            "method": "DELETE",
+            "path": "/_search/pipeline/{{ search_pipeline | default('hybrid-search-pipeline') }}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "hybrid-search",
+      "description": "Run hybrid BM25+kNN search via a normalization-processor pipeline. Ground truth is exact FAISS kNN neighbors — recall measures agreement with pure vector ranking.",
+      "default": false,
+      "schedule": [
+        {
+          "name": "hybrid-search-queries",
+          "operation": {
+            "operation-type": "vector-search",
+            "param-source": "vector-search-reader",
+            "index": "{{ _index }}",
+            "target_vector_count": {{ _n }},
+            "queries_file": "{{ _gt_file }}",
+            "k": {{ query_k | default(10) }},
+            "ef_search": {{ ef_search | default(64) }},
+            "search_mode": "hybrid",
+            "search_pipeline": "{{ search_pipeline | default('hybrid-search-pipeline') }}",
+            "hybrid_text_field": "{{ hybrid_text_field | default('text') }}",
+            "detailed-results": true
+          },
+          "clients": {{ search_clients | default(1) }},
+          {% if time_period is defined %}
+          "warmup-time-period": {{ warmup_time_period | default(60) }},
+          "time-period": {{ time_period }}
+          {% else %}
+          "warmup-iterations": {{ warmup_iterations | default(0) }},
+          "iterations": {{ iterations | default(1000) }}
+          {% endif %}
+        }
+      ]
     }
   ]
 }

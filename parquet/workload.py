@@ -180,12 +180,16 @@ class ParquetBulkParamReader:
                         )
                         BENCHMARK_STATE["indexed_doc_ids"].append(doc_id)
 
-                        # Sample queries from across the full corpus
+                        # Sample queries from across the full corpus.
+                        # text and title are stored so hybrid search can use
+                        # them as the BM25 leg of a hybrid query.
                         if len(BENCHMARK_STATE["sample_queries"]) < self.num_queries:
                             BENCHMARK_STATE["sample_queries"].append(
                                 {
                                     "query_id": doc_id,
                                     "vector": vector.tolist(),
+                                    "text": text,
+                                    "title": title,
                                 }
                             )
 
@@ -291,6 +295,27 @@ class VectorSearchParamReader:
     by ParquetBulkParamReader._compute_ground_truth.  The file path must match the
     one used during ingest — both default to _DEFAULT_QUERIES_FILE and can be
     overridden via the "queries_file" workload parameter.
+
+    Hybrid search mode
+    ------------------
+    Set ``search_mode: "hybrid"`` in workload params to issue a hybrid query
+    (BM25 ``match`` on the ``text`` field combined with ``knn``) via a
+    normalization-processor search pipeline instead of a pure kNN query.
+
+    Required additional params:
+      search_pipeline   — name of the search pipeline to use
+                          (default: "hybrid-search-pipeline")
+      hybrid_text_field — index field to run the BM25 leg against
+                          (default: "text")
+      bm25_weight       — arithmetic-mean weight for the BM25 score  (default: 0.3)
+      knn_weight        — arithmetic-mean weight for the kNN score    (default: 0.7)
+
+    Recall notes
+    ------------
+    Ground truth is always computed by FAISS against pure vector similarity.
+    For hybrid mode this means recall measures how closely the combined
+    BM25+kNN ranking agrees with exact kNN — useful as a quality/tradeoff
+    metric but not a true hybrid ground truth.
     """
 
     infinite = True  # cycles through queries indefinitely for time-period-based search
@@ -304,6 +329,9 @@ class VectorSearchParamReader:
         self.ef_search = params.get("ef_search", 64)
         self.field_name = params.get("target_field_name", "emb")
         self.operation_type = params.get("operation-type", "vector-search")
+        self.search_mode = params.get("search_mode", "vector")   # "vector" | "hybrid"
+        self.search_pipeline = params.get("search_pipeline", "hybrid-search-pipeline")
+        self.hybrid_text_field = params.get("hybrid_text_field", "text")
         self._cursor = 0
         self._query_indices = None  # set by partition(); None means round-robin
 
@@ -341,6 +369,9 @@ class VectorSearchParamReader:
         p.ef_search = self.ef_search
         p.field_name = self.field_name
         p.operation_type = self.operation_type
+        p.search_mode = self.search_mode
+        p.search_pipeline = self.search_pipeline
+        p.hybrid_text_field = self.hybrid_text_field
         queries = BENCHMARK_STATE["sample_queries"]
         p._query_indices = list(range(partition_index, len(queries), total_partitions))
         p._cursor = 0
@@ -360,31 +391,28 @@ class VectorSearchParamReader:
         self._cursor += 1
         query_item = queries[idx]
 
-        query_payload = {
-            "size": self.k,
-            "query": {
-                "knn": {
-                    self.field_name: {
-                        "vector": query_item["vector"],
-                        "k": self.k,
-                    }
-                }
-            },
-        }
+        if self.search_mode == "hybrid":
+            query_payload = self._build_hybrid_query(query_item)
+        else:
+            query_payload = self._build_vector_query(query_item)
 
-        if self.ef_search:
-            query_payload["query"]["knn"][self.field_name]["method_parameters"] = {
-                "ef_search": self.ef_search
-            }
+        if self._cursor == 1:
+            logger.info(
+                "[search-mode] %s | index=%s k=%s ef_search=%s%s",
+                self.search_mode,
+                self.index_name,
+                self.k,
+                self.ef_search,
+                f" pipeline={self.search_pipeline} text_field={self.hybrid_text_field}"
+                if self.search_mode == "hybrid" else "",
+            )
 
-        # Ground truth for this query — top-100 neighbor doc-id strings ordered
-        # by descending similarity, computed by FAISS during ingest.
-        # Sliced to k here so OSB's built-in recall scorer compares the right
-        # window, matching exactly how msmarco passes "neighbors".
+        # Ground truth is always the exact FAISS kNN neighbors — sliced to k.
+        # In hybrid mode this measures agreement with pure vector ranking.
         gt_ids = BENCHMARK_STATE["ground_truth"].get(query_item["query_id"], [])
         neighbors = gt_ids[: self.k]
 
-        return {
+        result = {
             "operation-type": self.operation_type,
             "index": self.index_name,
             "body": query_payload,
@@ -392,6 +420,54 @@ class VectorSearchParamReader:
             "k": self.k,
             "neighbors": neighbors,
             "detailed-results": self._params.get("detailed-results", True),
+        }
+        if self.search_mode == "hybrid":
+            result["search_pipeline"] = self.search_pipeline
+        return result
+
+    def _build_vector_query(self, query_item):
+        """Pure kNN query — original behaviour."""
+        knn_clause = {
+            "vector": query_item["vector"],
+            "k": self.k,
+        }
+        if self.ef_search:
+            knn_clause["method_parameters"] = {"ef_search": self.ef_search}
+        return {
+            "size": self.k,
+            "query": {"knn": {self.field_name: knn_clause}},
+        }
+
+    def _build_hybrid_query(self, query_item):
+        """Hybrid BM25 + kNN query routed through a normalization search pipeline.
+
+        The query text is the document's own ``text`` field value sampled
+        during ingest — a valid BM25 query because Wikipedia passages are
+        self-describing and the text was chosen to be representative.
+        """
+        query_text = query_item.get("text", query_item.get("title", ""))
+        knn_clause = {
+            "vector": query_item["vector"],
+            "k": self.k,
+        }
+        if self.ef_search:
+            knn_clause["method_parameters"] = {"ef_search": self.ef_search}
+        return {
+            "size": self.k,
+            "query": {
+                "hybrid": {
+                    "queries": [
+                        {
+                            "match": {
+                                self.hybrid_text_field: {
+                                    "query": query_text
+                                }
+                            }
+                        },
+                        {"knn": {self.field_name: knn_clause}},
+                    ]
+                }
+            },
         }
 
 
