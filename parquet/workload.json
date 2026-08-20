@@ -106,6 +106,21 @@
       ]
     },
     {
+      "name": "update-index-settings",
+      "description": "Update settings for the existing index",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "raw-request",
+            "method": "PUT",
+            "path": "/{{ _index }}/_settings",
+            "body": {{ index_settings | tojson }}
+          }
+        }
+      ]
+    },
+    {
       "name": "vector-search",
       "description": "Run k-NN vector search with ground-truth recall evaluation",
       "default": true,

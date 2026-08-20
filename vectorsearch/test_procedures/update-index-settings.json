@@ -1,0 +1,15 @@
+{
+  "name": "update-index-settings",
+  "description": "Update settings for the existing index",
+  "default": false,
+  "schedule": [
+    {
+      "operation": {
+        "operation-type": "raw-request",
+        "method": "PUT",
+        "path": "/{{ target_index_name | default('target_index') }}/_settings",
+        "body": {{ index_settings | tojson }}
+      }
+    }
+  ]
+}

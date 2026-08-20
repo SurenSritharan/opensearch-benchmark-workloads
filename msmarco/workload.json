@@ -88,6 +88,21 @@
       ]
     },
     {
+      "name": "update-index-settings",
+      "description": "Update settings for the existing index",
+      "default": false,
+      "schedule": [
+        {
+          "operation": {
+            "operation-type": "raw-request",
+            "method": "PUT",
+            "path": "/{{ target_index_name }}/_settings",
+            "body": {{ index_settings | tojson }}
+          }
+        }
+      ]
+    },
+    {
       "name": "enable-replicas",
       "description": "Re-enable replicas after a no-replica ingest and wait for green cluster health.",
       "default": false,
