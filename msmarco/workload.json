@@ -97,7 +97,7 @@
             "operation-type": "raw-request",
             "method": "PUT",
             "path": "/{{ target_index_name }}/_settings",
-            "body": {{ index_settings | tojson }}
+            "body": {{ index_settings | default({}) | tojson }}
           }
         }
       ]
