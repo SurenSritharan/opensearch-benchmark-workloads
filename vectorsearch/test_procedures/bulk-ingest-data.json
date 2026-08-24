@@ -5,7 +5,7 @@
   "schedule": [
     {
       "operation": {
-        "name": "custom-vector-bulk",
+        "name": "bulk-ingest-data",
         "operation-type": "bulk-vector-data-set",
         "index": "{{ target_index_name | default('target_index') }}",
         "field": "{{ target_field_name | default('target_field') }}",
@@ -20,7 +20,7 @@
         "request-timeout": {{ bulk_request_timeout | default(600) }},
         "retries": {{ bulk_retries | default(3) }}
       },
-      "clients": {{ target_index_bulk_indexing_clients | default(1)}}
+      "clients": {{ target_index_bulk_indexing_clients | default(8) }}
     }
   ]
 }
