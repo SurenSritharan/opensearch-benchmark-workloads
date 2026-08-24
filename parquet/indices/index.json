@@ -86,6 +86,9 @@
                 "name": "{{ encoder }}"
               }
             {%- endif %}
+            {%- if min_batch_size_for_quantization is defined %}
+              , "advanced.min_batch_size_for_quantization": {{ min_batch_size_for_quantization }}
+            {%- endif %}
           }
         }
         {%- endif %}
