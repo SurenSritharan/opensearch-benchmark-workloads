@@ -138,7 +138,7 @@
             "operation-type": "cluster-health",
             "request-params": {
               "wait_for_status": "green",
-              "timeout": "300s"
+              "request-timeout": {{ cluster_health_timeout | default(600) }}
             }
           }
         }
