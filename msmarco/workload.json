@@ -53,6 +53,13 @@
             "retries": {{ bulk_retries | default(3) }}
           },
           "clients": {{ target_index_bulk_indexing_clients | default(8) }}
+        },
+        {
+          "operation": {
+            "operation-type": "refresh",
+            "index": "{{ target_index_name }}",
+            "retries": 100
+          }
         }
       ]
     },

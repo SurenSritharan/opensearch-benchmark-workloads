@@ -73,6 +73,13 @@
             "detailed-results": {{ detailed_results | default(false) | tojson }}
           },
           "clients": {{ target_index_bulk_indexing_clients | default(1) }}
+        },
+        {
+          "operation": {
+            "operation-type": "refresh",
+            "index": "{{ _index }}",
+            "retries": 100
+          }
         }
       ]
     },
