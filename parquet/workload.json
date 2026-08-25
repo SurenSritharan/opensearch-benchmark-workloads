@@ -92,10 +92,17 @@
           "operation": {
             "operation-type": "force-merge",
             "index": "{{ _index }}",
-            "request-timeout": {{ target_index_force_merge_timeout | default(7200) }},
+            "request-timeout": {{ target_index_force_merge_timeout | default(28800) }},
             "mode": "polling",
             "max-num-segments": {{ target_index_max_num_segments | default(1) }},
             "include-in-results_publishing": true
+          }
+        },
+        {
+          "operation": {
+            "operation-type": "refresh",
+            "index": "{{ _index }}",
+            "retries": 100
           }
         }
       ]
