@@ -91,7 +91,7 @@
                   "name": "{{ encoder }}"
                 }
               {%- endif %}
-              {%- if engine is defined and engine == 'jvector' and min_batch_size_for_quantization is defined %}
+              {%- if engine is defined and engine == 'jvector' and min_batch_size_for_quantization | default(none) %}
                 , "advanced.min_batch_size_for_quantization": {{ min_batch_size_for_quantization }}
               {%- endif %}
             }
