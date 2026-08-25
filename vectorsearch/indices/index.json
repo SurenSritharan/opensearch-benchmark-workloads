@@ -71,28 +71,32 @@
             "space_type": "{{ target_index_space_type }}",
             "engine": "{{ engine | default('lucene') }}",
             "parameters": {
+              {%- set prepend_comma = false %}
               {%- if hnsw_ef_search is defined and hnsw_ef_search %}
                 "ef_search": {{ hnsw_ef_search }}
+                {%- set prepend_comma = true %}
               {%- endif %}
               {%- if hnsw_ef_construction is defined and hnsw_ef_construction %}
-              {%- if hnsw_ef_search is defined and hnsw_ef_search %}
-                ,
-              {%- endif %}
+                {%- if prepend_comma %},{% endif %}
                 "ef_construction": {{ hnsw_ef_construction }}
+                {%- set prepend_comma = true %}
               {%- endif %}
               {%- if hnsw_m is defined and hnsw_m %}
-              {%- if hnsw_ef_construction is defined and hnsw_ef_construction %}
-                ,
-              {%- endif %}
+                {%- if prepend_comma %},{% endif %}
                 "m": {{ hnsw_m }}
+                {%- set prepend_comma = true %}
               {%- endif %}
               {%- if encoder is defined and encoder %}
-                , "encoder": {
+                {%- if prepend_comma %},{% endif %}
+                "encoder": {
                   "name": "{{ encoder }}"
                 }
+                {%- set prepend_comma = true %}
               {%- endif %}
               {%- if engine is defined and engine == 'jvector' and min_batch_size_for_quantization | default(none) %}
-                , "advanced.min_batch_size_for_quantization": {{ min_batch_size_for_quantization }}
+                {%- if prepend_comma %},{% endif %}
+                "advanced.min_batch_size_for_quantization": {{ min_batch_size_for_quantization }}
+                {%- set prepend_comma = true %}
               {%- endif %}
             }
           }
