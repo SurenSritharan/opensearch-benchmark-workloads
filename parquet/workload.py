@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from typing import Any
 import faiss
 import numpy as np
 import pyarrow.parquet as pq
@@ -136,7 +137,15 @@ class ParquetBulkParamReader:
         # global_doc_idx counts every doc across all files (0-based) so we can
         # honour each partition's [_start_doc, _end_doc) ingest window.
         global_doc_idx = 0
-        columns = ["_id", "title", "text", self.field_name]
+        # Only request columns that actually exist in this parquet file.
+        # title and text are optional — datasets like openai-large-5m have
+        # only id and emb, so we skip missing columns rather than crashing.
+        first_file_path = self._get_local_cached_path(sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))[0])
+        available_columns: Any = pq.read_schema(first_file_path).names
+        has_title = "title" in available_columns
+        has_text = "text" in available_columns
+        id_col = "_id" if "_id" in available_columns else "id"
+        columns = [id_col] + (["title"] if has_title else []) + (["text"] if has_text else []) + [self.field_name]
 
         for remote_path in remote_files:
             local_path = self._get_local_cached_path(remote_path)
@@ -163,8 +172,8 @@ class ParquetBulkParamReader:
                         break
 
                     doc_id = str(id_list[i])
-                    title = data["title"][i]
-                    text = data["text"][i]
+                    title = data["title"][i] if has_title else ""
+                    text = data["text"][i] if has_text else ""
                     raw_emb = data[self.field_name][i]
 
                     if build_gt:
@@ -198,9 +207,12 @@ class ParquetBulkParamReader:
                         pending.append(
                             {"index": {"_index": self.index_name, "_id": doc_id}}
                         )
-                        pending.append(
-                            {"title": title, "text": text, self.field_name: raw_emb}
-                        )
+                        doc_body = {self.field_name: raw_emb}
+                        if has_title:
+                            doc_body["title"] = title
+                        if has_text:
+                            doc_body["text"] = text
+                        pending.append(doc_body)
 
                         # Flush a full bulk_size chunk as soon as it's ready
                         if len(pending) // 2 >= self.bulk_size:
