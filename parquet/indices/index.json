@@ -51,6 +51,9 @@
       "{{ target_field_name | default('emb') }}": {
         "type": "knn_vector",
         "dimension": {{ target_index_dimension | default(1024) }},
+        {%- if disable_doc_values is defined and disable_doc_values %}
+        "doc_values": false,
+        {%- endif %}
         {%- if mode is defined %}
         "mode": "{{ mode }}",
         {%- endif %}
