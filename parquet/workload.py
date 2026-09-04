@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import resource
-import tempfile
+import subprocess
 import time
 from typing import Any
 import faiss
@@ -32,8 +32,8 @@ def _rss_gb() -> float:
 
 
 # Global state shared between indexing parameter generator and query ground truth builder.
-# faiss_index is intentionally absent -- vectors are streamed to a memmap file instead of
-# held in RAM.  Only sample_queries (1000 dicts) and ground_truth live here.
+# Only sample_queries (up to num_queries dicts) and ground_truth live here --
+# no large vector arrays.  Vectors are never held in RAM across the ingest pass.
 BENCHMARK_STATE = {
     "sample_queries": [],
     "ground_truth": {},
@@ -43,10 +43,7 @@ _DEFAULT_QUERIES_FILE = "parquet-vectors-gt-{target_count}.json"
 
 
 def _format_count(n: int) -> str:
-    """Return a compact human-readable label for a vector count.
-
-    Examples: 500_000 -> '500k', 1_000_000 -> '1m', 50_000 -> '50k'.
-    """
+    """Return a compact human-readable count string, e.g. 50000 -> '50k', 5000000 -> '5m'."""
     if n >= 1_000_000 and n % 1_000_000 == 0:
         return f"{n // 1_000_000}m"
     if n >= 1_000 and n % 1_000 == 0:
@@ -55,33 +52,37 @@ def _format_count(n: int) -> str:
 
 
 # ============================================================================
-# 1. PARAMETER READERS (Generates Data for Operations)
+# 1. BULK INGEST PARAMETER SOURCE
 # ============================================================================
 
 
 class ParquetBulkParamReader:
-    """Streams PyArrow Parquet batches, builds the FAISS ground-truth index,
+    """Streams documents from HuggingFace parquet files into OpenSearch.
 
-    and yields bulk indexing requests to OpenSearch Benchmark.
+    Pass 1 (ingest): vectors are sent to OpenSearch in bulk batches.
+      - A sample of up to num_queries vectors is collected in memory for GT.
+      - No large arrays are allocated; RSS stays flat throughout ingest.
 
-    Memory model
-    ------------
-    Vectors are written row-by-row to a numpy.memmap file on disk during the
-    single streaming pass so RAM usage stays O(batch_size) regardless of corpus
-    size.  After streaming completes, _compute_ground_truth opens the memmap
-    read-only and searches it in fixed-size row-batches -- peak RAM during
-    ground-truth computation is one search batch (~100 MB for _SEARCH_BATCH_SIZE
-    rows at 1536 dims).  The memmap and doc-id sidecar files are deleted when
-    computation finishes, or immediately on any exception / cancellation via the
-    try/finally guard in _stream_and_index.
+    Pass 2 (GT): after all target docs are indexed, re-stream the locally
+      cached parquet files and compute exact top-K neighbours for each query
+      vector.  Each parquet file is processed in row-chunks of _CHUNK_SIZE so
+      the peak score matrix is (num_queries x _CHUNK_SIZE) -- ~640 MB at
+      10k queries / 16k rows -- constant regardless of corpus size.
+
+    GCS cache: before computing GT, check whether a pre-built GT file exists
+      in GCS.  If it does, download it and skip GT computation entirely.
+      After a fresh computation, upload the result to GCS so subsequent runs
+      are free.  Controlled by the ``gcs_gt_bucket`` workload param.
     """
 
     infinite = False  # finite -- stops after target_vector_count docs
 
-    # Number of vectors per FAISS search batch during ground-truth computation.
-    # At 1536 dims / float32 each row is 6 144 bytes.
-    # 16 384 rows ~= 100 MB -- comfortably fits alongside the query matrix.
-    _SEARCH_BATCH_SIZE   = 16_384
+    # Number of top neighbours to retrieve per query for ground truth.
+    _K_GT                = 100
+    # iter_batches batch size for the GT pass.
+    # Peak RAM per batch = (num_queries + _GT_BATCH) * dim * 4B * 2 (Python + FAISS copy)
+    # = (10k + 10k) * 1536 * 4B * 2 = ~240 MB -- well within the 48 GB pod limit.
+    _GT_BATCH            = 10_000
     _PROGRESS_EVERY_DOCS = 100_000  # emit a progress log line every N docs
 
     def __init__(self, workload, params):
@@ -99,6 +100,10 @@ class ParquetBulkParamReader:
             target_count=self.target_docs
         )
         self.queries_file = params.get("queries_file", default_queries_file)
+
+        # GCS GT cache -- set gcs_gt_bucket in workload params to enable.
+        # GT files are stored at gs://<bucket>/gt/<basename of queries_file>.
+        self.gcs_gt_bucket = params.get("gcs_gt_bucket", "")
 
         self.fs = HfFileSystem()
         self.repo_id = params.get(
@@ -127,6 +132,7 @@ class ParquetBulkParamReader:
         p.index_name = self.index_name
         p.num_queries = self.num_queries
         p.queries_file = self.queries_file
+        p.gcs_gt_bucket = self.gcs_gt_bucket
         p.fs = self.fs
         p.repo_id = self.repo_id
         p.dataset_dir = self.dataset_dir
@@ -151,379 +157,387 @@ class ParquetBulkParamReader:
             repo_type="dataset",
         )
 
+    def _gcs_gt_object(self) -> str:
+        """Return the full GCS URI for this dataset's GT file, or '' if disabled."""
+        if not self.gcs_gt_bucket:
+            return ""
+        basename = os.path.basename(self.queries_file)
+        bucket = self.gcs_gt_bucket.rstrip("/")
+        return f"gs://{bucket}/gt/{basename}"
+
+    def _download_gt_from_gcs(self) -> bool:
+        """Try to download the GT file from GCS.  Returns True on success."""
+        uri = self._gcs_gt_object()
+        if not uri:
+            return False
+        try:
+            result = subprocess.run(
+                ["gsutil", "-q", "stat", uri],
+                capture_output=True, timeout=30,
+            )
+            if result.returncode != 0:
+                logger.info(f"GCS GT cache miss: {uri}")
+                return False
+        except Exception as e:
+            logger.warning(f"GCS stat failed ({uri}): {e} -- will recompute GT")
+            return False
+
+        logger.info(f"GCS GT cache hit -- downloading {uri}")
+        os.makedirs(os.path.dirname(os.path.abspath(self.queries_file)), exist_ok=True)
+        try:
+            subprocess.run(
+                ["gsutil", "-q", "cp", uri, self.queries_file],
+                capture_output=True, check=True, timeout=300,
+            )
+            logger.info(f"Downloaded GT file from GCS to {self.queries_file!r}")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"GCS download failed: {e.stderr.decode().strip()} -- will recompute GT")
+            return False
+
+    def _upload_gt_to_gcs(self) -> None:
+        """Upload the freshly computed GT file to GCS for future runs."""
+        uri = self._gcs_gt_object()
+        if not uri:
+            return
+        try:
+            subprocess.run(
+                ["gsutil", "-q", "cp", self.queries_file, uri],
+                capture_output=True, check=True, timeout=300,
+            )
+            logger.info(f"Uploaded GT file to GCS: {uri}")
+        except Exception as e:
+            logger.warning(f"GCS upload failed ({uri}): {e} -- GT file kept locally only")
+
     def _stream_and_index(self):
+        # ------------------------------------------------------------------
+        # GT file existence check -- three possible states:
+        #   1. Local file exists (previous run on same PVC)  -> skip GT entirely
+        #   2. GCS cache hit                                 -> download, skip GT
+        #   3. Neither                                       -> compute after ingest
+        # ------------------------------------------------------------------
         if os.path.exists(self.queries_file):
             logger.info(
                 f"Ground truth file {self.queries_file!r} already exists -- "
-                "skipping FAISS index build and ground truth computation."
+                "skipping GT computation."
             )
+            gt_exists = True
+        elif self._download_gt_from_gcs():
             gt_exists = True
         else:
             gt_exists = False
 
-        # Only partition 0 builds the FAISS ground-truth index, covering all
-        # target_docs so recall is computed against the full indexed corpus.
-        # All partitions index their own slice into OpenSearch.
+        # Only partition 0 builds ground truth, covering the full corpus so
+        # recall is computed against every indexed doc.
         build_gt = not gt_exists and self._partition_index == 0
 
-        # Reset shared query/ground-truth state for this run so retries do not
-        # accumulate duplicate entries from a previous attempt.
         if build_gt:
             BENCHMARK_STATE["sample_queries"].clear()
             BENCHMARK_STATE["ground_truth"].clear()
 
         remote_files = sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))
-        # global_doc_idx counts every doc across all files (0-based) so we can
-        # honour each partition's [_start_doc, _end_doc) ingest window.
         global_doc_idx = 0
-        # Only request columns that actually exist in this parquet file.
-        # title and text are optional -- datasets like openai-large-5m have
-        # only id and emb, so we skip missing columns rather than crashing.
-        first_file_path = self._get_local_cached_path(sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))[0])
+
+        # Detect available columns from the first file.
+        first_file_path = self._get_local_cached_path(
+            sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))[0]
+        )
         available_columns: Any = pq.read_schema(first_file_path).names
         has_title = "title" in available_columns
         has_text = "text" in available_columns
         id_col = "_id" if "_id" in available_columns else "id"
-        columns = [id_col] + (["title"] if has_title else []) + (["text"] if has_text else []) + [self.field_name]
+        columns = (
+            [id_col]
+            + (["title"] if has_title else [])
+            + (["text"] if has_text else [])
+            + [self.field_name]
+        )
 
-        # ------------------------------------------------------------------
-        # Ground-truth streaming state (partition 0 only)
-        #
-        # Vectors are written to a numpy.memmap file instead of an in-memory
-        # FAISS index so peak RAM stays O(batch_size) during the ingest pass.
-        # The try/finally below guarantees the temp files are removed on any
-        # exit path -- normal completion, exception, or generator close/cancel.
-        # ------------------------------------------------------------------
-        memmap_file = None    # numpy.memmap handle (write mode during ingest)
-        memmap_path = None    # str path -- kept for deletion after GT computation
-        docid_path  = None    # str path to newline-delimited doc-id sidecar
-        docid_file  = None    # open file handle -- kept open for the streaming pass
-
-        if build_gt:
-            gt_dir = os.path.dirname(os.path.abspath(self.queries_file)) or "."
-            os.makedirs(gt_dir, exist_ok=True)
-            tmp = tempfile.NamedTemporaryFile(
-                suffix=".bin", delete=False,
-                dir=gt_dir,
-            )
-            memmap_path = tmp.name
-            tmp.close()
-            docid_path = memmap_path + ".ids"
-            # Open the doc-id sidecar once and hold it for the entire streaming
-            # pass -- avoids one open()/close() syscall per vector row.
-            docid_file = open(docid_path, "w")
-            # Pre-allocate the full memmap so the OS can use sparse allocation.
-            memmap_file = np.memmap(
-                memmap_path, dtype="float32", mode="w+",
-                shape=(self.target_docs, self.dimension),
-            )
-            logger.info(
-                f"Allocated memmap for {self.target_docs:,} x {self.dimension}-dim "
-                f"vectors at {memmap_path!r} "
-                f"({self.target_docs * self.dimension * 4 / 1024**3:.1f} GB on disk)"
-            )
-
-        gt_vec_count = 0  # rows written to memmap so far
         _ingest_start  = time.monotonic()
-        _last_progress = 0  # global_doc_idx at the last progress log
+        _last_progress = 0
 
-        try:
-            for remote_path in remote_files:
-                local_path = self._get_local_cached_path(remote_path)
-                parquet_file = pq.ParquetFile(local_path)
+        for remote_path in remote_files:
+            local_path = self._get_local_cached_path(remote_path)
+            parquet_file = pq.ParquetFile(local_path)
 
-                for batch in parquet_file.iter_batches(
-                    batch_size=self.batch_size, columns=columns
-                ):
-                    data = batch.to_pydict()
-                    id_list = data.get("_id") or data.get("id")
-                    if id_list is None:
-                        raise ValueError(
-                            f"Parquet file {remote_path!r} has neither '_id' nor 'id' column"
+            for batch in parquet_file.iter_batches(
+                batch_size=self.batch_size, columns=columns
+            ):
+                data = batch.to_pydict()
+                id_list = data.get("_id") or data.get("id")
+                if id_list is None:
+                    raise ValueError(
+                        f"Parquet file {remote_path!r} has neither '_id' nor 'id' column"
+                    )
+
+                pending = []
+
+                for i in range(len(id_list)):
+                    if global_doc_idx >= self.target_docs:
+                        break
+
+                    doc_id = str(id_list[i])
+                    title = data["title"][i] if has_title else ""
+                    text = data["text"][i] if has_text else ""
+                    raw_emb = data[self.field_name][i]
+
+                    # Sample query vectors during ingest -- O(num_queries) RAM only.
+                    # No large arrays; the full corpus is never held in memory.
+                    if build_gt and len(BENCHMARK_STATE["sample_queries"]) < self.num_queries:
+                        vector = np.array(raw_emb, dtype=np.float32)
+                        norm = np.linalg.norm(vector)
+                        if norm > 0:
+                            vector /= norm
+                        BENCHMARK_STATE["sample_queries"].append(
+                            {
+                                "query_id": doc_id,
+                                "vector": vector.tolist(),
+                                "text": text,
+                                "title": title,
+                            }
                         )
 
-                    # Accumulate bulk actions for this partition's slice, then
-                    # flush in bulk_size chunks so PyArrow IO and OS bulk request
-                    # sizes are tuned independently.
-                    pending = []
+                    # Accumulate bulk actions for this partition's slice.
+                    if self._start_doc <= global_doc_idx < self._end_doc:
+                        pending.append(
+                            {"index": {"_index": self.index_name, "_id": doc_id}}
+                        )
+                        doc_body = {self.field_name: raw_emb}
+                        if has_title:
+                            doc_body["title"] = title
+                        if has_text:
+                            doc_body["text"] = text
+                        pending.append(doc_body)
 
-                    for i in range(len(id_list)):
-                        # Stop once all target docs have been seen.
-                        if global_doc_idx >= self.target_docs:
-                            break
+                        if len(pending) // 2 >= self.bulk_size:
+                            yield {
+                                "body": pending,
+                                "bulk-size": len(pending) // 2,
+                                "unit": "docs",
+                                "action-metadata-present": True,
+                                "index": self.index_name,
+                            }
+                            pending = []
 
-                        doc_id = str(id_list[i])
-                        title = data["title"][i] if has_title else ""
-                        text = data["text"][i] if has_text else ""
-                        raw_emb = data[self.field_name][i]
+                    global_doc_idx += 1
 
-                        if build_gt:
-                            # Normalize vector for cosine similarity (IndexFlatIP).
-                            vector = np.array(raw_emb, dtype=np.float32)
-                            norm = np.linalg.norm(vector)
-                            if norm > 0:
-                                vector /= norm
+                    if global_doc_idx - _last_progress >= self._PROGRESS_EVERY_DOCS:
+                        _last_progress = global_doc_idx
+                        _elapsed = time.monotonic() - _ingest_start
+                        _pct  = global_doc_idx / self.target_docs * 100
+                        _rate = global_doc_idx / _elapsed if _elapsed > 0 else 0
+                        _eta  = (self.target_docs - global_doc_idx) / _rate if _rate > 0 else 0
+                        logger.info(
+                            f"[ingest] {global_doc_idx:>9,}/{self.target_docs:,} "
+                            f"({_pct:5.1f}%) "
+                            f"| {_rate:,.0f} docs/s "
+                            f"| elapsed {_elapsed/60:,.1f} min "
+                            f"| eta {_eta/60:,.1f} min "
+                            f"| rss {_rss_gb():.2f} GB"
+                        )
 
-                            # Write directly to the pre-allocated memmap row.
-                            # No Python list grows -- RAM stays flat.
-                            memmap_file[gt_vec_count] = vector
-                            gt_vec_count += 1
+                # Flush remainder from this PyArrow batch.
+                if pending:
+                    yield {
+                        "body": pending,
+                        "bulk-size": len(pending) // 2,
+                        "unit": "docs",
+                        "action-metadata-present": True,
+                        "index": self.index_name,
+                    }
 
-                            # Append doc id to sidecar (held open for the full pass).
-                            docid_file.write(doc_id + "\n")
+                if global_doc_idx >= self.target_docs:
+                    if build_gt:
+                        self._compute_ground_truth()
+                    return
 
-                            # Sample queries from across the full corpus.
-                            if len(BENCHMARK_STATE["sample_queries"]) < self.num_queries:
-                                BENCHMARK_STATE["sample_queries"].append(
-                                    {
-                                        "query_id": doc_id,
-                                        "vector": vector.tolist(),
-                                        "text": text,
-                                        "title": title,
-                                    }
-                                )
+        if build_gt:
+            self._compute_ground_truth()
 
-                        # Only accumulate bulk actions for this partition's slice
-                        if self._start_doc <= global_doc_idx < self._end_doc:
-                            pending.append(
-                                {"index": {"_index": self.index_name, "_id": doc_id}}
-                            )
-                            doc_body = {self.field_name: raw_emb}
-                            if has_title:
-                                doc_body["title"] = title
-                            if has_text:
-                                doc_body["text"] = text
-                            pending.append(doc_body)
-
-                            # Flush a full bulk_size chunk as soon as it's ready
-                            if len(pending) // 2 >= self.bulk_size:
-                                yield {
-                                    "body": pending,
-                                    "bulk-size": len(pending) // 2,
-                                    "unit": "docs",
-                                    "action-metadata-present": True,
-                                    "index": self.index_name,
-                                }
-                                pending = []
-
-                        global_doc_idx += 1
-
-                        # Emit a progress line every _PROGRESS_EVERY_DOCS docs.
-                        if global_doc_idx - _last_progress >= self._PROGRESS_EVERY_DOCS:
-                            _last_progress = global_doc_idx
-                            _elapsed = time.monotonic() - _ingest_start
-                            _pct     = global_doc_idx / self.target_docs * 100
-                            _rate    = global_doc_idx / _elapsed if _elapsed > 0 else 0
-                            _eta     = (self.target_docs - global_doc_idx) / _rate if _rate > 0 else 0
-                            _disk_gb = (
-                                os.path.getsize(memmap_path) / 1024 ** 3
-                                if memmap_path and os.path.exists(memmap_path)
-                                else 0.0
-                            )
-                            logger.info(
-                                f"[ingest] {global_doc_idx:>9,}/{self.target_docs:,} "
-                                f"({_pct:5.1f}%) "
-                                f"| {_rate:,.0f} docs/s "
-                                f"| elapsed {_elapsed/60:,.1f} min "
-                                f"| eta {_eta/60:,.1f} min "
-                                f"| rss {_rss_gb():.2f} GB "
-                                f"| memmap {_disk_gb:.2f} GB"
-                            )
-
-                    # Flush any remainder from this Parquet batch
-                    if pending:
-                        yield {
-                            "body": pending,
-                            "bulk-size": len(pending) // 2,
-                            "unit": "docs",
-                            "action-metadata-present": True,
-                            "index": self.index_name,
-                        }
-
-                    if global_doc_idx >= self.target_docs:
-                        if build_gt:
-                            # Flush both buffers before searching.
-                            memmap_file.flush()
-                            docid_file.close()
-                            self._compute_ground_truth(
-                                memmap_file, memmap_path, docid_path, gt_vec_count
-                            )
-                        return
-
-            if build_gt:
-                memmap_file.flush()
-                docid_file.close()
-                self._compute_ground_truth(
-                    memmap_file, memmap_path, docid_path, gt_vec_count
-                )
-
-        finally:
-            # Guarantee temp files are removed on every exit path:
-            #   Normal completion  -- _compute_ground_truth already deleted them;
-            #                         os.path.exists guards make this a no-op.
-            #   Exception          -- files are cleaned up before propagating.
-            #   GeneratorExit/cancel -- OSB closes the generator; finally still runs.
-            if memmap_file is not None:
-                try:
-                    del memmap_file   # flush dirty pages and release the mmap
-                except Exception:
-                    pass
-            if docid_file is not None and not docid_file.closed:
-                try:
-                    docid_file.close()
-                except Exception:
-                    pass
-            for _tmp_path in (memmap_path, docid_path):
-                if _tmp_path and os.path.exists(_tmp_path):
-                    try:
-                        os.unlink(_tmp_path)
-                        logger.debug(f"Cleaned up temp file {_tmp_path!r}")
-                    except OSError as _e:
-                        logger.warning(f"Could not remove temp file {_tmp_path!r}: {_e}")
-
-    def _compute_ground_truth(
-        self,
-        memmap_file: np.memmap,
-        memmap_path: str,
-        docid_path: str,
-        total_vectors: int,
-    ) -> None:
-        """Compute exact nearest-neighbour ground truth by searching the memmap
-        in fixed-size row-batches so peak RAM is O(_SEARCH_BATCH_SIZE) rather
-        than O(total_vectors).
+    def _compute_ground_truth(self) -> None:
+        """Compute exact nearest-neighbour ground truth by re-streaming the
+        locally cached parquet files in fixed-size batches using FAISS
+        IndexFlatIP for heap-based top-K search.
 
         Algorithm
         ---------
-        We want exact top-100 neighbours for each of the num_queries query
-        vectors against the full corpus of total_vectors indexed vectors.
-        A single FAISS IndexFlatIP.search() call over all rows would require
-        loading all rows into RAM simultaneously (same as the old approach).
+        Query vectors (num_queries x dim) are already in BENCHMARK_STATE from
+        the ingest pass.  We iterate with iter_batches(batch_size=_GT_BATCH)
+        so we never materialise more than _GT_BATCH rows at once regardless of
+        how large the parquet row-groups are (the real HuggingFace files have
+        one row-group of 500k rows -- reading the whole group at once would OOM).
 
-        Instead we maintain a running top-K heap per query:
-          1. Open the memmap read-only (OS page-cache handles I/O).
-          2. Slice rows in chunks of _SEARCH_BATCH_SIZE.
-          3. For each chunk build a temporary IndexFlatIP over just those rows
-             and search with k=min(100, chunk_size).
-          4. Merge the chunk results into a per-query heap, keeping only the
-             global top-100 distances and their original corpus positions.
-          5. After all chunks are processed resolve corpus positions to doc IDs
-             via the sidecar file, write the queries file, and delete temp files.
+        For each batch:
+          1. to_pylist() + np.array() for the emb column (~batch_size rows).
+          2. Normalise in-place.
+          3. faiss.IndexFlatIP.add(batch_vectors) -- copies into C++ heap.
+          4. del batch_vectors to free Python side immediately.
+          5. idx.search(query_vectors, K) -- heap-based, O(M*K) extra RAM.
+          6. del idx to free C++ heap.
+          7. Merge into running top-K accumulators.
 
-        Peak RAM: query_matrix (num_queries x dim x 4 B)
-                + one chunk   (_SEARCH_BATCH_SIZE x dim x 4 B)
-                + heap arrays (num_queries x 100 x 8 B)
-                ~= 25 MB + 100 MB + <1 MB  for the default parameters.
+        Why iter_batches not read_row_group:
+          HuggingFace parquet files have 1 row-group = 500k rows.
+          read_row_group(0) would materialise all 500k × 1536 × 4B = 3 GB at
+          once via to_pylist(), causing OOM.  iter_batches streams _GT_BATCH
+          rows at a time regardless of physical row-group boundaries.
+
+        Peak RAM per batch (_GT_BATCH=10k, dim=1536, 10k queries, K=100):
+          query_matrix:   10k × 1536 × 4B =  60 MB  (constant)
+          batch_vectors:  10k × 1536 × 4B =  60 MB  (freed before FAISS search)
+          FAISS C++ copy: 10k × 1536 × 4B =  60 MB  (freed after search)
+          FAISS heap:     10k × 100  × 4B =   4 MB
+          Total:                          ~ 184 MB peak
         """
-        logger.info(
-            f"Computing exact FAISS ground truth for {total_vectors:,} vectors "
-            f"in batches of {self._SEARCH_BATCH_SIZE:,} rows ..."
-        )
         queries = BENCHMARK_STATE["sample_queries"]
         if not queries:
+            logger.warning("No sample queries collected -- skipping GT computation")
             return
 
-        k_gt = min(100, total_vectors)
+        remote_files = sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))
+        total_files = len(remote_files)
+
+        k_gt  = self._K_GT
         num_q = len(queries)
 
         query_vectors = np.array(
             [q["vector"] for q in queries], dtype=np.float32
-        )  # shape: (num_q, dim) -- always small, fits in RAM
+        )  # (num_q, dim) -- always small, fits comfortably in RAM
 
-        # Running top-K accumulators -- one row per query.
-        # best_dists: (num_q, k_gt)  largest inner-products seen so far
-        # best_pos:   (num_q, k_gt)  corresponding corpus row indices
+        # Running top-K accumulators, one row per query.
         # Initialised to -inf / -1 so any real result beats them immediately.
-        best_dists = np.full((num_q, k_gt), -np.inf, dtype=np.float64)
+        best_dists = np.full((num_q, k_gt), -np.inf, dtype=np.float32)
         best_pos   = np.full((num_q, k_gt), -1,      dtype=np.int64)
 
-        # Re-open the memmap read-only so the OS can page it in on demand.
-        corpus = np.memmap(
-            memmap_path, dtype="float32", mode="r",
-            shape=(total_vectors, self.dimension),
+        # doc_ids accumulates one string ID per corpus row in ingest order.
+        # ~50 MB for 5M short IDs -- always fits in RAM.
+        doc_ids: list = []
+
+        logger.info(
+            f"Computing exact ground truth for {num_q:,} queries "
+            f"over {self.target_docs:,} corpus vectors "
+            f"({total_files} parquet files, FAISS IndexFlatIP, "
+            f"batch_size={self._GT_BATCH:,}) ..."
         )
+        gt_start = time.monotonic()
 
-        chunk_start = 0
-        while chunk_start < total_vectors:
-            chunk_end  = min(chunk_start + self._SEARCH_BATCH_SIZE, total_vectors)
-            chunk_size = chunk_end - chunk_start
+        available_columns: Any = pq.read_schema(
+            self._get_local_cached_path(remote_files[0])
+        ).names
+        id_col = "_id" if "_id" in available_columns else "id"
 
-            # Load only this chunk into a temporary in-memory array for FAISS.
-            chunk = np.array(corpus[chunk_start:chunk_end], dtype=np.float32)
+        corpus_row_offset = 0  # absolute index of the next unprocessed corpus row
+        batches_done = 0
 
-            idx_chunk = faiss.IndexFlatIP(self.dimension)
-            idx_chunk.add(chunk)
-            del chunk  # free immediately after FAISS copies the data
+        for file_idx, remote_path in enumerate(remote_files, 1):
+            if corpus_row_offset >= self.target_docs:
+                break
 
-            k_this = min(k_gt, chunk_size)
-            dists, local_pos = idx_chunk.search(query_vectors, k_this)
-            # local_pos is relative to chunk_start; translate to corpus-absolute.
-            abs_pos = local_pos + chunk_start  # (num_q, k_this)
+            local_path   = self._get_local_cached_path(remote_path)
+            parquet_file = pq.ParquetFile(local_path)
 
-            # Merge chunk results into the running top-K.
-            # Concatenate existing best with chunk results, re-sort, keep top-k_gt.
-            merged_dists = np.concatenate([best_dists, dists.astype(np.float64)], axis=1)
-            merged_pos   = np.concatenate([best_pos,   abs_pos],                  axis=1)
+            for batch in parquet_file.iter_batches(
+                batch_size=self._GT_BATCH, columns=[id_col, self.field_name]
+            ):
+                if corpus_row_offset >= self.target_docs:
+                    break
 
-            # argsort descending by distance for each query row.
-            order      = np.argsort(-merged_dists, axis=1)[:, :k_gt]
-            best_dists = np.take_along_axis(merged_dists, order, axis=1)
-            best_pos   = np.take_along_axis(merged_pos,   order, axis=1)
+                batch_rows  = len(batch)
+                rows_to_use = min(batch_rows, self.target_docs - corpus_row_offset)
 
-            chunk_start = chunk_end
-            if chunk_start % (self._SEARCH_BATCH_SIZE * 10) == 0 or chunk_start == total_vectors:
-                logger.info(
-                    f"  ground-truth search: {chunk_start:,}/{total_vectors:,} rows processed"
-                )
+                # Collect doc IDs for this batch.
+                ids_col = batch.column(id_col).to_pylist()
+                doc_ids.extend(str(x) for x in ids_col[:rows_to_use])
 
-        del corpus  # release the read-only memmap view
+                # Deserialise embedding column into a float32 numpy array.
+                # to_pylist() on _GT_BATCH rows is fast and memory-bounded.
+                emb_col      = batch.column(self.field_name).to_pylist()
+                batch_vectors = np.array(emb_col[:rows_to_use], dtype=np.float32)
+                del batch, emb_col, ids_col  # free PyArrow memory immediately
 
-        # Resolve corpus row indices to doc-id strings via the sidecar file.
-        # Read the entire sidecar into a list -- it contains at most target_docs
-        # short strings (one per line) so it is always small (~50 MB for 5M IDs).
-        with open(docid_path) as fid:
-            all_doc_ids = [line.rstrip("\n") for line in fid]
+                norms = np.linalg.norm(batch_vectors, axis=1, keepdims=True)
+                norms = np.where(norms == 0, 1.0, norms)
+                batch_vectors /= norms  # normalise in-place
 
+                # Build a temporary flat index over this batch.
+                # FAISS copies batch_vectors into its C++ heap (~60 MB).
+                idx_b = faiss.IndexFlatIP(self.dimension)
+                idx_b.add(batch_vectors)
+                del batch_vectors  # Python side freed; C++ copy lives in idx_b
+
+                # Heap-based search -- O(num_q * k_gt) extra = 4 MB.
+                k_this = min(k_gt, rows_to_use)
+                dists, local_pos = idx_b.search(query_vectors, k_this)
+                del idx_b  # free C++ heap immediately after search
+
+                # Translate batch-relative positions to absolute corpus indices.
+                abs_pos = local_pos.astype(np.int64) + corpus_row_offset
+                abs_pos[local_pos == -1] = -1  # FAISS padding sentinel
+
+                # Merge into running global top-K.
+                merged_dists = np.concatenate([best_dists, dists],   axis=1)
+                merged_pos   = np.concatenate([best_pos,   abs_pos], axis=1)
+                order        = np.argsort(-merged_dists, axis=1)[:, :k_gt]
+                best_dists   = np.take_along_axis(merged_dists, order, axis=1)
+                best_pos     = np.take_along_axis(merged_pos,   order, axis=1)
+
+                corpus_row_offset += rows_to_use
+                batches_done += 1
+
+            elapsed = time.monotonic() - gt_start
+            rate = corpus_row_offset / elapsed if elapsed > 0 else 0
+            eta  = (self.target_docs - corpus_row_offset) / rate if rate > 0 else 0
+            logger.info(
+                f"  [gt] file {file_idx}/{total_files} -- "
+                f"{corpus_row_offset:,}/{self.target_docs:,} rows "
+                f"({batches_done} batches) "
+                f"| {_rss_gb():.2f} GB rss "
+                f"| elapsed {elapsed/60:.1f} min "
+                f"| eta {eta/60:.1f} min"
+            )
+
+        # Resolve corpus row indices to doc-id strings.
         for i, q in enumerate(queries):
             gt_doc_ids = [
-                all_doc_ids[pos]
+                doc_ids[pos]
                 for pos in best_pos[i]
-                if pos != -1 and pos < len(all_doc_ids)
+                if pos != -1 and pos < len(doc_ids)
             ]
             BENCHMARK_STATE["ground_truth"][q["query_id"]] = gt_doc_ids
 
-        # Persist to disk so vector-search can load them without re-running ingest.
+        # Persist to disk.
+        os.makedirs(os.path.dirname(os.path.abspath(self.queries_file)), exist_ok=True)
         payload = {
             "queries": BENCHMARK_STATE["sample_queries"],
             "ground_truth": BENCHMARK_STATE["ground_truth"],
         }
         with open(self.queries_file, "w") as f:
             json.dump(payload, f)
+        elapsed_total = time.monotonic() - gt_start
         logger.info(
-            f"Saved {len(queries)} queries and ground truth to {self.queries_file}"
+            f"Saved {len(queries):,} queries and ground truth to {self.queries_file!r} "
+            f"in {elapsed_total/60:.1f} min"
         )
+
+        # Upload to GCS so future runs skip GT computation entirely.
+        self._upload_gt_to_gcs()
 
         # Release shared state -- no longer needed now the file is written.
         BENCHMARK_STATE["sample_queries"].clear()
         BENCHMARK_STATE["ground_truth"].clear()
 
-        # Delete the temporary memmap and doc-id sidecar files.
-        # The try/finally in _stream_and_index provides a second safety net,
-        # but deleting here on the happy path means the finally block is a no-op.
-        for path in (memmap_path, docid_path):
-            try:
-                os.unlink(path)
-                logger.info(f"Deleted temporary file {path!r}")
-            except OSError as exc:
-                logger.warning(f"Could not delete temporary file {path!r}: {exc}")
-
     def params(self):
         """Called by OSB each iteration to get the next bulk request dict."""
-        # Lazily initialise the generator for the single-client (no partition()) path.
         if self._generator is None:
             self._start_doc = 0
             self._end_doc = self.target_docs
             self._generator = self._stream_and_index()
         return next(self._generator)
+
+
+# ============================================================================
+# 2. VECTOR SEARCH PARAMETER SOURCE
+# ============================================================================
 
 
 class VectorSearchParamReader:
@@ -551,10 +565,10 @@ class VectorSearchParamReader:
 
     Recall notes
     ------------
-    Ground truth is always computed by FAISS against pure vector similarity.
-    For hybrid mode this means recall measures how closely the combined
-    BM25+kNN ranking agrees with exact kNN -- useful as a quality/tradeoff
-    metric but not a true hybrid ground truth.
+    Ground truth is computed by exact numpy nearest-neighbour search against
+    the full indexed corpus.  For hybrid mode this means recall measures how
+    closely the combined BM25+kNN ranking agrees with exact kNN -- useful as
+    a quality/tradeoff metric but not a true hybrid ground truth.
     """
 
     infinite = True  # cycles through queries indefinitely for time-period-based search
@@ -596,11 +610,7 @@ class VectorSearchParamReader:
             )
 
     def partition(self, partition_index, total_partitions):
-        """Return a copy that owns a strided slice of the query list.
-
-        Partition i takes indices i, i+N, i+2N, ... so every query is issued by
-        exactly one client and no shuffling or RNG is needed.
-        """
+        """Return a copy that owns a strided slice of the query list."""
         p = VectorSearchParamReader.__new__(VectorSearchParamReader)
         p._params = self._params
         p.index_name = self.index_name
@@ -622,7 +632,6 @@ class VectorSearchParamReader:
         if not queries:
             raise StopIteration("No queries available in state.")
 
-        # Use strided indices when partitioned, otherwise plain round-robin.
         if self._query_indices is not None:
             idx = self._query_indices[self._cursor % len(self._query_indices)]
         else:
@@ -646,8 +655,6 @@ class VectorSearchParamReader:
                 if self.search_mode == "hybrid" else "",
             )
 
-        # Ground truth is always the exact FAISS kNN neighbors -- sliced to k.
-        # In hybrid mode this measures agreement with pure vector ranking.
         gt_ids = BENCHMARK_STATE["ground_truth"].get(query_item["query_id"], [])
         neighbors = gt_ids[: self.k]
 
@@ -665,7 +672,7 @@ class VectorSearchParamReader:
         return result
 
     def _build_vector_query(self, query_item):
-        """Pure kNN query -- original behaviour."""
+        """Pure kNN query."""
         knn_clause = {
             "vector": query_item["vector"],
             "k": self.k,
@@ -678,12 +685,7 @@ class VectorSearchParamReader:
         }
 
     def _build_hybrid_query(self, query_item):
-        """Hybrid BM25 + kNN query routed through a normalization search pipeline.
-
-        The query text is the document's own text field value sampled
-        during ingest -- a valid BM25 query because Wikipedia passages are
-        self-describing and the text was chosen to be representative.
-        """
+        """Hybrid BM25 + kNN query routed through a normalization search pipeline."""
         query_text = query_item.get("text", query_item.get("title", ""))
         knn_clause = {
             "vector": query_item["vector"],
