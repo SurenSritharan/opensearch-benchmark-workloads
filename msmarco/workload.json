@@ -111,7 +111,7 @@
                   {% if oversample_factor is defined %}
                   "oversample_factor": {{ oversample_factor }},
                   {% endif %}
-                  {% if oversample_factor is defined %}
+                  {% if overquery_factor is defined %}
                   "overquery_factor": {{ overquery_factor }},
                   {% endif %}
                   "body": "{{ query_body | safe }}"
@@ -240,7 +240,7 @@
             {% if oversample_factor is defined %}
             "oversample_factor": {{ oversample_factor }},
             {% endif %}
-            {% if oversample_factor is defined %}
+            {% if overquery_factor is defined %}
             "overquery_factor": {{ overquery_factor }},
             {% endif %}
             "body": "{{ query_body | safe }}"
