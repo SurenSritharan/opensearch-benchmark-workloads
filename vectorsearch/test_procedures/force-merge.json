@@ -17,7 +17,7 @@
         "operation": {
         "operation-type": "refresh",
         "index": "{{ target_index_name | default('target_index') }}",
-        "retries": 100
+        "request-timeout": 7200
         }
     }
     ]

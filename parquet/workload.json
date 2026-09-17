@@ -78,7 +78,7 @@
           "operation": {
             "operation-type": "refresh",
             "index": "{{ _index }}",
-            "retries": 100
+            "request-timeout": 7200
           }
         }
       ]
@@ -161,7 +161,7 @@
           "operation": {
             "operation-type": "refresh",
             "index": "{{ _index }}",
-            "retries": 100
+            "request-timeout": 7200
           }
         }
       ]
@@ -175,7 +175,7 @@
           "operation": {
             "operation-type": "refresh",
             "index": "{{ _index }}",
-            "retries": 100
+            "request-timeout": 7200
           }
         }
       ]

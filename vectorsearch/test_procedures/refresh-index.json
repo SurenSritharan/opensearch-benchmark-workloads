@@ -7,10 +7,9 @@
             "operation": {
                 "name": "refresh-target-index",
                 "operation-type": "refresh",
-                "retries": 100,
-                "index": "{{ target_index_name | default('target_index') }}"
+                "index": "{{ target_index_name | default('target_index') }}",
+                "request-timeout": 7200
             }
         }
     ]
 }
-    

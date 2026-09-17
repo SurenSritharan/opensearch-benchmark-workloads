@@ -58,7 +58,7 @@
           "operation": {
             "operation-type": "refresh",
             "index": "{{ target_index_name }}",
-            "retries": 100
+            "request-timeout": 7200
           }
         }
       ]
@@ -82,7 +82,7 @@
                   "bulk_size": {{ target_index_bulk_size | default(5000) }},
                   "index": "{{ target_index_name }}",
                   "detailed-results": {{ detailed_results | default(false) | tojson }},
-                  "request-timeout": {{ bulk_request_timeout | default(600) }},
+                  "request-timeout": {{ bulk_request_timeout | default(1200) }},
                   "retries": {{ bulk_retries | default(3) }}
                 },
                 "clients": {{ target_index_bulk_indexing_clients | default(8) }}
@@ -149,21 +149,21 @@
           "operation": {
             "operation-type": "refresh",
             "index": "{{ target_index_name | default('target_index') }}",
-            "retries": 100
+            "request-timeout": 7200
           }
         }
       ]
     },
     {
       "name": "refresh-index",
-      "description": "Refresh indexes",
+      "description": "Refresh index",
       "default": false,
       "schedule": [
         {
           "operation": {
             "operation-type": "refresh",
             "index": "{{ target_index_name }}",
-            "retries": 100
+            "request-timeout": 7200
           }
         }
       ]
