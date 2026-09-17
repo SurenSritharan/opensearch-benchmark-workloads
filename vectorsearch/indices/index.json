@@ -17,6 +17,12 @@
         {%- if refresh_interval is defined %}
         ,"refresh_interval": {{ refresh_interval }}
         {%- endif %}
+        {%- if merge_scheduler_auto_throttle is defined %}
+        ,"merge.scheduler.auto_throttle": {{ merge_scheduler_auto_throttle | tojson }}
+        {%- endif %}
+        {%- if merge_scheduler_max_thread_count is defined %}
+        ,"merge.scheduler.max_thread_count": {{ merge_scheduler_max_thread_count | tojson }}
+        {%- endif %}        
         {%- if max_merged_segment is defined %}
         ,"merge": {
           "policy": {
