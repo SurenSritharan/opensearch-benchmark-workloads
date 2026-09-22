@@ -4,6 +4,7 @@
   "default": false,
   "schedule": [
     {
+      "name": "initial-ingest",
       "operation": {
         "name": "seed-ingest",
         "operation-type": "bulk-vector-data-set",
@@ -23,6 +24,7 @@
       "clients": {{ target_index_bulk_indexing_clients | default(8) }}
     },
     {
+      "name": "initial-refresh",
       "operation": {
         "operation-type": "refresh",
         "index": "{{ target_index_name | default('target_index') }}",
@@ -34,7 +36,7 @@
         "clients": {{ (target_index_bulk_indexing_clients | default(8)) + (search_clients | default(1)) }},
         "tasks": [
           {
-            "name": "bulk-ingest-data",
+            "name": "concurrent-ingest",
             "completes-parent": true,
             "operation": {
               "operation-type": "bulk-vector-data-set",
@@ -54,7 +56,7 @@
             "clients": {{ target_index_bulk_indexing_clients | default(8) }}
           },
           {
-            "name": "prod-queries",
+            "name": "concurrent-search",
             "operation": {
               "name": "prod-queries",
               "operation-type": "vector-search",
@@ -83,6 +85,7 @@
       }
     },
     {
+      "name": "post-refresh",
       "operation": {
         "operation-type": "refresh",
         "index": "{{ target_index_name | default('target_index') }}",
