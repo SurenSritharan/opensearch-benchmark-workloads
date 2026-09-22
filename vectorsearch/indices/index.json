@@ -22,6 +22,7 @@
         {%- endif %}
         {%- if merge_scheduler_max_thread_count is defined %}
         ,"merge.scheduler.max_thread_count": {{ merge_scheduler_max_thread_count | tojson }}
+        ,"merge.scheduler.max_merge_count": {{ (merge_scheduler_max_thread_count + 5) | tojson }}
         {%- endif %}        
         {%- if max_merged_segment is defined %}
         ,"merge": {
@@ -29,6 +30,12 @@
             "max_merged_segment": "{{ max_merged_segment }}"
           }
         }
+        {%- endif %}
+        {%- if segments_per_tier is defined %}
+        ,"merge.policy.segments_per_tier": {{ segments_per_tier }}
+        {%- endif %}
+        {%- if floor_segment is defined %}
+        ,"merge.policy.floor_segment": "{{ floor_segment }}"
         {%- endif %}
         {%- if hnsw_ef_search is defined and hnsw_ef_search %}
         ,"knn.algo_param.ef_search": {{ hnsw_ef_search }}
