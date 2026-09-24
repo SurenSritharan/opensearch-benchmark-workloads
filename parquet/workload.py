@@ -153,31 +153,27 @@ class ParquetBulkParamReader:
         # of competing to download the same remote files simultaneously.
         # We also build the cumulative row-count map here once and store it on
         # the instance so _stream_and_index() can reuse it without a second scan.
-        if partition_index == 0:
-            remote_files = sorted(p.fs.glob(f"{p.dataset_dir}/*.parquet"))
+        # Build the file list and cumulative row map once on the original reader
+        # (self) so all partitions share it regardless of call order.
+        if not hasattr(self, '_remote_files'):
+            remote_files = sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))
             cumulative = []
             rows_seen = 0
             for remote_path in remote_files:
                 cumulative.append(rows_seen)
-                local_path = p._get_local_cached_path(remote_path)
+                local_path = self._get_local_cached_path(remote_path)
                 rows_seen += pq.ParquetFile(local_path).metadata.num_rows
-                if rows_seen >= p.target_docs:
+                if rows_seen >= self.target_docs:
                     break
-            # Store on both p (for this partition's _stream_and_index) and self
-            # (so subsequent partition() calls for partitions 1..N can read it).
-            p._remote_files = self._remote_files = remote_files
-            p._cumulative   = self._cumulative   = cumulative
+            self._remote_files = remote_files
+            self._cumulative = cumulative
             logger.info(
-                f"[partition-0] Pre-cached {len(cumulative)}/{len(remote_files)} "
+                f"[partition-{partition_index}] Pre-cached {len(cumulative)}/{len(remote_files)} "
                 f"parquet file(s) covering {rows_seen:,} rows "
-                f"(target_docs={p.target_docs:,})."
+                f"(target_docs={self.target_docs:,})."
             )
-        else:
-            # Non-zero partitions inherit the file list and row map from partition-0.
-            # OSB calls partition() on the *original* reader object for every worker,
-            # so store on self (the original) during partition-0's call and read it back here.
-            p._remote_files = self._remote_files
-            p._cumulative = self._cumulative
+        p._remote_files = self._remote_files
+        p._cumulative = self._cumulative
         p._generator = p._stream_and_index()
         return p
 
