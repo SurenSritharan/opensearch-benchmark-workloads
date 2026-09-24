@@ -101,26 +101,7 @@ class ParquetBulkParamReader:
         default_queries_file = _DEFAULT_QUERIES_FILE.format(
             target_count=self.target_docs
         )
-        queries_file = params.get("queries_file", default_queries_file)
-        # Resolve relative paths against the workload directory so the process
-        # CWD is never used as the parent (it may be /datasets on the agent).
-        if not os.path.isabs(queries_file):
-            queries_file = os.path.join(workload.root_path, queries_file)
-        # If the requested parent directory is not writable (e.g. /datasets/gt
-        # is a cluster-only PVC mount absent on local agents), fall back to the
-        # workload directory which is always writable.
-        gt_dir = os.path.dirname(queries_file)
-        try:
-            os.makedirs(gt_dir, exist_ok=True)
-        except OSError:
-            queries_file = os.path.join(
-                workload.root_path, os.path.basename(queries_file)
-            )
-            logger.warning(
-                f"Cannot create GT directory {gt_dir!r} -- "
-                f"writing GT file to {queries_file!r} instead."
-            )
-        self.queries_file = queries_file
+        self.queries_file = params.get("queries_file", default_queries_file)
 
         # GCS GT cache -- set gcs_gt_bucket in workload params to enable.
         # GT files are stored at gs://<bucket>/gt/<basename of queries_file>.
