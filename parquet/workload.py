@@ -83,6 +83,8 @@ class ParquetBulkParamReader:
     # Peak RAM per batch = (num_queries + _GT_BATCH) * dim * 4B * 2 (Python + FAISS copy)
     # = (10k + 10k) * 1536 * 4B * 2 = ~240 MB -- well within the 48 GB pod limit.
     _GT_BATCH            = 10_000
+    # Emit a GT progress line every this many corpus rows (= every 10 batches).
+    _GT_PROGRESS_EVERY   = 100_000
     _PROGRESS_EVERY_DOCS = 100_000  # emit a progress log line every N docs
 
     def __init__(self, workload, params):
@@ -146,6 +148,24 @@ class ParquetBulkParamReader:
             if partition_index < total_partitions - 1
             else self.target_docs
         )
+        # Partition 0 pre-warms the hf_hub cache for only the shards needed to
+        # cover target_docs, so that all partitions read from local disk instead
+        # of competing to download the same remote files simultaneously.
+        if partition_index == 0:
+            remote_files = sorted(p.fs.glob(f"{p.dataset_dir}/*.parquet"))
+            rows_seen = 0
+            files_needed = []
+            for remote_path in remote_files:
+                files_needed.append(remote_path)
+                local_path = p._get_local_cached_path(remote_path)
+                rows_seen += pq.ParquetFile(local_path).metadata.num_rows
+                if rows_seen >= p.target_docs:
+                    break
+            logger.info(
+                f"[partition-0] Pre-cached {len(files_needed)}/{len(remote_files)} "
+                f"parquet file(s) covering {rows_seen:,} rows "
+                f"(target_docs={p.target_docs:,})."
+            )
         p._generator = p._stream_and_index()
         return p
 
@@ -236,12 +256,9 @@ class ParquetBulkParamReader:
             BENCHMARK_STATE["ground_truth"].clear()
 
         remote_files = sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))
-        global_doc_idx = 0
 
         # Detect available columns from the first file.
-        first_file_path = self._get_local_cached_path(
-            sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))[0]
-        )
+        first_file_path = self._get_local_cached_path(remote_files[0])
         available_columns: Any = pq.read_schema(first_file_path).names
         has_title = "title" in available_columns
         has_text = "text" in available_columns
@@ -253,10 +270,40 @@ class ParquetBulkParamReader:
             + [self.field_name]
         )
 
-        _ingest_start  = time.monotonic()
-        _last_progress = 0
-
+        # Build a cumulative row-count map over only the files needed to cover
+        # target_docs (matching the pre-cache boundary), so non-zero partitions
+        # can skip directly to their starting file without touching uncached shards.
+        cumulative = []   # cumulative[i] = first global doc index in remote_files[i]
+        total = 0
+        needed_files = 0
         for remote_path in remote_files:
+            cumulative.append(total)
+            local_path = self._get_local_cached_path(remote_path)
+            total += pq.ParquetFile(local_path).metadata.num_rows
+            needed_files += 1
+            if total >= self.target_docs:
+                break
+
+        # Find the first file that contains _start_doc.
+        start_file_idx = 0
+        for i, file_start in enumerate(cumulative):
+            if file_start <= self._start_doc:
+                start_file_idx = i
+
+        global_doc_idx = cumulative[start_file_idx]
+        if global_doc_idx > 0:
+            logger.info(
+                f"[partition-{self._partition_index}] Seeking directly to file index "
+                f"{start_file_idx} (global_doc_idx={global_doc_idx:,}, "
+                f"start_doc={self._start_doc:,}) -- skipping "
+                f"{start_file_idx} file(s)"
+            )
+
+        _ingest_start  = time.monotonic()
+        _last_progress = global_doc_idx
+        _last_progress_time = _ingest_start
+
+        for remote_path in remote_files[start_file_idx:]:
             local_path = self._get_local_cached_path(remote_path)
             parquet_file = pq.ParquetFile(local_path)
 
@@ -322,10 +369,14 @@ class ParquetBulkParamReader:
                     global_doc_idx += 1
 
                     if global_doc_idx - _last_progress >= self._PROGRESS_EVERY_DOCS:
+                        _now = time.monotonic()
+                        _interval_docs = global_doc_idx - _last_progress
+                        _interval_secs = _now - _last_progress_time
+                        _elapsed = _now - _ingest_start
                         _last_progress = global_doc_idx
-                        _elapsed = time.monotonic() - _ingest_start
+                        _last_progress_time = _now
                         _pct  = global_doc_idx / self.target_docs * 100
-                        _rate = global_doc_idx / _elapsed if _elapsed > 0 else 0
+                        _rate = _interval_docs / _interval_secs if _interval_secs > 0 else 0
                         _eta  = (self.target_docs - global_doc_idx) / _rate if _rate > 0 else 0
                         logger.info(
                             f"[ingest] {global_doc_idx:>9,}/{self.target_docs:,} "
@@ -679,10 +730,11 @@ class VectorSearchParamReader:
         }
         if self.ef_search:
             knn_clause["method_parameters"] = {"ef_search": self.ef_search}
-        return {
+        body = {
             "size": self.k,
             "query": {"knn": {self.field_name: knn_clause}},
         }
+        return body
 
     def _build_hybrid_query(self, query_item):
         """Hybrid BM25 + kNN query routed through a normalization search pipeline."""
@@ -693,7 +745,7 @@ class VectorSearchParamReader:
         }
         if self.ef_search:
             knn_clause["method_parameters"] = {"ef_search": self.ef_search}
-        return {
+        body = {
             "size": self.k,
             "query": {
                 "hybrid": {
@@ -710,6 +762,7 @@ class VectorSearchParamReader:
                 }
             },
         }
+        return body
 
 
 # ============================================================================
