@@ -97,7 +97,7 @@ class ParquetBulkParamReader:
         self.field_name = params.get("target_field_name", "emb")
         default_index_name = f"parquet-vectors-{_format_count(self.target_docs)}"
         self.index_name = params.get("index", default_index_name)
-        self.num_queries = params.get("num_queries", 1000)
+        self.num_queries = params.get("num_queries", 10_000)
         default_queries_file = _DEFAULT_QUERIES_FILE.format(
             target_count=self.target_docs
         )
