@@ -58,6 +58,17 @@
       ]
     },
     {
+      "name": "cohere-8m",
+      "target-index": "{{ target_index_name }}",
+      "documents": [
+        {
+          "source-file": "cohere-8m.hdf5",
+          "source-format": "hdf5",
+          "document-count": 8000000
+        }
+      ]
+    },
+    {
       "name": "cohere-10m",
       "base-url": "https://dbyiw3u3rf9yr.cloudfront.net/corpora/vectorsearch/cohere-wikipedia-22-12-en-embeddings",
       "target-index": "{{ target_index_name }}",
