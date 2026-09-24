@@ -101,7 +101,26 @@ class ParquetBulkParamReader:
         default_queries_file = _DEFAULT_QUERIES_FILE.format(
             target_count=self.target_docs
         )
-        self.queries_file = params.get("queries_file", default_queries_file)
+        queries_file = params.get("queries_file", default_queries_file)
+        # Resolve relative paths against the workload directory so the process
+        # CWD is never used as the parent (it may be /datasets on the agent).
+        if not os.path.isabs(queries_file):
+            queries_file = os.path.join(workload.root_path, queries_file)
+        # If the requested parent directory is not writable (e.g. /datasets/gt
+        # is a cluster-only PVC mount absent on local agents), fall back to the
+        # workload directory which is always writable.
+        gt_dir = os.path.dirname(queries_file)
+        try:
+            os.makedirs(gt_dir, exist_ok=True)
+        except OSError:
+            queries_file = os.path.join(
+                workload.root_path, os.path.basename(queries_file)
+            )
+            logger.warning(
+                f"Cannot create GT directory {gt_dir!r} -- "
+                f"writing GT file to {queries_file!r} instead."
+            )
+        self.queries_file = queries_file
 
         # GCS GT cache -- set gcs_gt_bucket in workload params to enable.
         # GT files are stored at gs://<bucket>/gt/<basename of queries_file>.
@@ -151,21 +170,33 @@ class ParquetBulkParamReader:
         # Partition 0 pre-warms the hf_hub cache for only the shards needed to
         # cover target_docs, so that all partitions read from local disk instead
         # of competing to download the same remote files simultaneously.
+        # We also build the cumulative row-count map here once and store it on
+        # the instance so _stream_and_index() can reuse it without a second scan.
         if partition_index == 0:
             remote_files = sorted(p.fs.glob(f"{p.dataset_dir}/*.parquet"))
+            cumulative = []
             rows_seen = 0
-            files_needed = []
             for remote_path in remote_files:
-                files_needed.append(remote_path)
+                cumulative.append(rows_seen)
                 local_path = p._get_local_cached_path(remote_path)
                 rows_seen += pq.ParquetFile(local_path).metadata.num_rows
                 if rows_seen >= p.target_docs:
                     break
+            # Store on both p (for this partition's _stream_and_index) and self
+            # (so subsequent partition() calls for partitions 1..N can read it).
+            p._remote_files = self._remote_files = remote_files
+            p._cumulative   = self._cumulative   = cumulative
             logger.info(
-                f"[partition-0] Pre-cached {len(files_needed)}/{len(remote_files)} "
+                f"[partition-0] Pre-cached {len(cumulative)}/{len(remote_files)} "
                 f"parquet file(s) covering {rows_seen:,} rows "
                 f"(target_docs={p.target_docs:,})."
             )
+        else:
+            # Non-zero partitions inherit the file list and row map from partition-0.
+            # OSB calls partition() on the *original* reader object for every worker,
+            # so store on self (the original) during partition-0's call and read it back here.
+            p._remote_files = self._remote_files
+            p._cumulative = self._cumulative
         p._generator = p._stream_and_index()
         return p
 
@@ -255,9 +286,10 @@ class ParquetBulkParamReader:
             BENCHMARK_STATE["sample_queries"].clear()
             BENCHMARK_STATE["ground_truth"].clear()
 
-        remote_files = sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))
+        remote_files = self._remote_files
+        cumulative   = self._cumulative
 
-        # Detect available columns from the first file.
+        # Detect available columns from the first file (already cached locally).
         first_file_path = self._get_local_cached_path(remote_files[0])
         available_columns: Any = pq.read_schema(first_file_path).names
         has_title = "title" in available_columns
@@ -270,20 +302,6 @@ class ParquetBulkParamReader:
             + [self.field_name]
         )
 
-        # Build a cumulative row-count map over only the files needed to cover
-        # target_docs (matching the pre-cache boundary), so non-zero partitions
-        # can skip directly to their starting file without touching uncached shards.
-        cumulative = []   # cumulative[i] = first global doc index in remote_files[i]
-        total = 0
-        needed_files = 0
-        for remote_path in remote_files:
-            cumulative.append(total)
-            local_path = self._get_local_cached_path(remote_path)
-            total += pq.ParquetFile(local_path).metadata.num_rows
-            needed_files += 1
-            if total >= self.target_docs:
-                break
-
         # Find the first file that contains _start_doc.
         start_file_idx = 0
         for i, file_start in enumerate(cumulative):
@@ -293,14 +311,15 @@ class ParquetBulkParamReader:
         global_doc_idx = cumulative[start_file_idx]
         if global_doc_idx > 0:
             logger.info(
-                f"[partition-{self._partition_index}] Seeking directly to file index "
-                f"{start_file_idx} (global_doc_idx={global_doc_idx:,}, "
-                f"start_doc={self._start_doc:,}) -- skipping "
-                f"{start_file_idx} file(s)"
+                f"[partition-{self._partition_index}] Seeking to file index "
+                f"{start_file_idx} (shard starts at global doc {global_doc_idx:,}, "
+                f"this slice starts at {self._start_doc:,})"
             )
 
-        _ingest_start  = time.monotonic()
-        _last_progress = global_doc_idx
+        _ingest_start      = time.monotonic()
+        _slice_docs        = self._end_doc - self._start_doc
+        _indexed_docs      = 0   # docs actually sent to OpenSearch by this partition
+        _last_indexed      = 0   # _indexed_docs value at last progress log
         _last_progress_time = _ingest_start
 
         for remote_path in remote_files[start_file_idx:]:
@@ -355,6 +374,7 @@ class ParquetBulkParamReader:
                         if has_text:
                             doc_body["text"] = text
                         pending.append(doc_body)
+                        _indexed_docs += 1
 
                         if len(pending) // 2 >= self.bulk_size:
                             yield {
@@ -368,19 +388,21 @@ class ParquetBulkParamReader:
 
                     global_doc_idx += 1
 
-                    if global_doc_idx - _last_progress >= self._PROGRESS_EVERY_DOCS:
+                    if _indexed_docs - _last_indexed >= self._PROGRESS_EVERY_DOCS:
                         _now = time.monotonic()
-                        _interval_docs = global_doc_idx - _last_progress
                         _interval_secs = _now - _last_progress_time
-                        _elapsed = _now - _ingest_start
-                        _last_progress = global_doc_idx
+                        _elapsed       = _now - _ingest_start
+                        _interval_docs = _indexed_docs - _last_indexed
+                        _last_indexed      = _indexed_docs
                         _last_progress_time = _now
-                        _pct  = global_doc_idx / self.target_docs * 100
+                        _slice_pct = _indexed_docs / _slice_docs * 100 if _slice_docs > 0 else 0
+                        _global_pct = (self._start_doc + _indexed_docs) / self.target_docs * 100
                         _rate = _interval_docs / _interval_secs if _interval_secs > 0 else 0
-                        _eta  = (self.target_docs - global_doc_idx) / _rate if _rate > 0 else 0
+                        _eta  = (_slice_docs - _indexed_docs) / _rate if _rate > 0 else 0
                         logger.info(
-                            f"[ingest] {global_doc_idx:>9,}/{self.target_docs:,} "
-                            f"({_pct:5.1f}%) "
+                            f"[ingest p{self._partition_index}/{self._total_partitions}] "
+                            f"{_indexed_docs:>9,}/{_slice_docs:,} ({_slice_pct:5.1f}%) "
+                            f"| global {self._start_doc + _indexed_docs:,}/{self.target_docs:,} ({_global_pct:5.1f}%) "
                             f"| {_rate:,.0f} docs/s "
                             f"| elapsed {_elapsed/60:,.1f} min "
                             f"| eta {_eta/60:,.1f} min "
@@ -580,8 +602,23 @@ class ParquetBulkParamReader:
     def params(self):
         """Called by OSB each iteration to get the next bulk request dict."""
         if self._generator is None:
+            # Single-partition path (no partition() call): build the file list
+            # and cumulative map here so _stream_and_index() has what it needs.
             self._start_doc = 0
             self._end_doc = self.target_docs
+            self._partition_index = 0
+            self._total_partitions = 1
+            remote_files = sorted(self.fs.glob(f"{self.dataset_dir}/*.parquet"))
+            cumulative = []
+            rows_seen = 0
+            for remote_path in remote_files:
+                cumulative.append(rows_seen)
+                local_path = self._get_local_cached_path(remote_path)
+                rows_seen += pq.ParquetFile(local_path).metadata.num_rows
+                if rows_seen >= self.target_docs:
+                    break
+            self._remote_files = remote_files
+            self._cumulative = cumulative
             self._generator = self._stream_and_index()
         return next(self._generator)
 
