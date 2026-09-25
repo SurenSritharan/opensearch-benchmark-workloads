@@ -1,115 +1,47 @@
 import os
 import struct
-import urllib.request
 from osbenchmark.workload.params import ParamSource
 from .runners import register as register_runners
 import numpy as np
 import json
 import copy
-from pathlib import Path
 
 def register(registry):
     register_runners(registry)
     registry.register_param_source("msmarco-fvec-bulk-source", MsMarcoFvecBulkSource)
     registry.register_param_source("random-vector-search-param-source", RandomSearchParamSource)
 
-def _open_fvec(file_path_or_url, byte_offset=0):
-    """Open a .fvec source by local path or HTTP(S) URL.
-
-    For HTTP(S) URLs, issues a Range request so only the bytes needed for this
-    partition are transferred — no local copy is written.  For local paths the
-    file is opened normally and seeked to byte_offset.
-
-    Returns a file-like object positioned at byte_offset.
-    """
-    if file_path_or_url.startswith("http://") or file_path_or_url.startswith("https://"):
-        req = urllib.request.Request(
-            file_path_or_url,
-            headers={"Range": f"bytes={byte_offset}-"},
-        )
-        return urllib.request.urlopen(req)
-    else:
-        f = open(file_path_or_url, "rb")
-        if byte_offset:
-            f.seek(byte_offset)
-        return f
-
-
-def _ensure_local_file(url_or_path):
-    """Return a local file path for *url_or_path*, downloading if necessary.
-
-    If *url_or_path* is already a local path it is returned unchanged.
-    If it is an HTTP(S) URL the file is downloaded once to
-    $BENCHMARK_HOME/.osb/benchmarks/data/msmarco/<filename> and that path
-    is returned on all subsequent calls.
-    """
-    if not (url_or_path.startswith("http://") or url_or_path.startswith("https://")):
-        return url_or_path
-
-    benchmark_home = os.environ.get("BENCHMARK_HOME", "/datasets/opensearch-benchmark")
-    cache_dir = Path(benchmark_home) / ".osb" / "benchmarks" / "data" / "msmarco"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    filename = url_or_path.split("/")[-1]
-    local_path = cache_dir / filename
-
-    if local_path.exists():
-        print(f"Using cached file: {local_path}")
-        return str(local_path)
-
-    print(f"Downloading {filename} ...")
-    tmp_path = local_path.with_suffix(local_path.suffix + ".tmp")
-    try:
-        urllib.request.urlretrieve(url_or_path, str(tmp_path))
-        tmp_path.rename(local_path)
-        print(f"Downloaded {filename} ({local_path.stat().st_size / (1024**2):.1f} MB)")
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
-    return str(local_path)
-
-
-def _fvec_total_docs(file_path_or_url, vector_size_bytes):
-    """Return the total number of vectors in a .fvec source.
-
-    For HTTP(S) URLs, reads the Content-Length from a HEAD request.
-    For local paths, uses os.path.getsize.
-    """
-    if file_path_or_url.startswith("http://") or file_path_or_url.startswith("https://"):
-        req = urllib.request.Request(file_path_or_url, method="HEAD")
-        with urllib.request.urlopen(req) as resp:
-            content_length = int(resp.headers.get("Content-Length", 0))
-        return content_length // vector_size_bytes
-    else:
-        return os.path.getsize(file_path_or_url) // vector_size_bytes
-
-
 class MsMarcoFvecBulkSource:
     def __init__(self, workload, params, **kwargs):
-        # file_path accepts either a local path or an HTTP(S) URL — when a URL
-        # is supplied each partition streams its byte slice directly from S3/GCS
-        # without writing anything to disk.
+        # Configuration properties defined in workload.json
         self.file_path = params.get("file_path")
         self.bulk_size = params.get("bulk_size", 1000)
         self.index_name = params.get("index")
         self.detailed_results = params.get("detailed-results", False)
         self.request_timeout = params.get("request-timeout", None)
-
-        # Dimension comes from datasets.yaml common_params as "dimension".
-        # Falls back to 1024 so existing direct invocations that don't set it still work.
-        self.dim = int(params.get("dimension", 1024))
+        
+        # Fixed MS MARCO Cohere structural variables
+        self.dim = 1024
         self.vector_size_bytes = 4 + (self.dim * 4)
-
-        # num_vectors is injected by the loader from corpus_size (e.g. 8m → 8_000_000).
-        # Only fall back to a HEAD request if it is genuinely absent (e.g. direct invocation).
+        
+        self.file_size = os.path.getsize(self.file_path)
+        
+        # Support explicit vector count; otherwise fall back to file size only.
         self.total_docs = params.get("num_vectors")
-
+        
         if self.total_docs is None:
-            self.total_docs = _fvec_total_docs(self.file_path, self.vector_size_bytes)
-            print(f"Calculated total_docs from source size: {self.total_docs}")
+            self.total_docs = self.file_size // self.vector_size_bytes
+            print(f"Calculated total_docs from file size: {self.total_docs}")
         else:
-            print(f"Using num_vectors from params: {self.total_docs}")
-
+            print(f"Using specified num_vectors: {self.total_docs}")
+        
+        # Validate that requested vectors don't exceed file size
+        max_possible = self.file_size // self.vector_size_bytes
+        if self.total_docs > max_possible:
+            print(f"WARNING: Requested {self.total_docs} vectors but file only contains {max_possible}")
+            print(f"Limiting to {max_possible} vectors")
+            self.total_docs = max_possible
+    
     def partition(self, client_index, total_clients):
         # Segmenting file chunks cleanly across multi-client GKE pod deployments
         return MsMarcoFvecPartition(self, client_index, total_clients)
@@ -131,11 +63,9 @@ class MsMarcoFvecPartition:
         self.end_doc = self.start_doc + docs_per_client if client_index < total_clients - 1 else source.total_docs
         self.current_doc = self.start_doc
         
-        # Open the source positioned at this partition's start byte.
-        # For HTTP URLs this issues a Range request so only this slice is
-        # transferred; for local files it seeks to the correct offset.
-        byte_offset = self.current_doc * self.vector_size_bytes
-        self.f = _open_fvec(source.file_path, byte_offset)
+        # Independent pointer position per active file channel stream
+        self.f = open(source.file_path, "rb")
+        self.f.seek(self.current_doc * self.vector_size_bytes)
 
     def __iter__(self):
         return self
@@ -148,20 +78,9 @@ class MsMarcoFvecPartition:
         total = self.end_doc - self.start_doc
         return 1.0 if total == 0 else (self.current_doc - self.start_doc) / total
 
-    def close(self):
-        if hasattr(self, "f") and self.f:
-            try:
-                if not getattr(self.f, "closed", False):
-                    self.f.close()
-            except Exception:
-                pass
-
-    def __del__(self):
-        self.close()
-
     def params(self):
         if self.current_doc >= self.end_doc:
-            self.close()
+            self.f.close()
             raise StopIteration
         
         docs_to_read = min(self.bulk_size, self.end_doc - self.current_doc)
@@ -188,7 +107,7 @@ class MsMarcoFvecPartition:
             self.current_doc += 1
             
         if not body:
-            self.close()
+            self.f.close()
             raise StopIteration
             
         result = {
@@ -210,33 +129,24 @@ class RandomSearchParamSource(ParamSource):
         
         self._operation_type = params.get('operation-type', "vector-search")
         self._index_name = params.get('index_name', 'target_index')
-        self._dims = int(params.get("dimension", params.get("dims", 1024)))
+        self._dims = int(params.get("dims", 1024))
         self._top_k = int(params.get("k", 10))
         self._field = params.get("field", "target_field")
         self._queries_file = params.get("queries_file", "queries.fvec")
         self._ground_truth_file = params.get("ground_truth_file", "ground_truth.ivec")
         self._detailed_results = params.get("detailed-results", True)
-        # datasets.yaml exposes this as hnsw_ef_search; fall back to ef_search for
-        # direct invocations that use the shorter name.
-        self._ef_search = int(params.get("hnsw_ef_search", params.get("ef_search", 128)))
+        self._ef_search = int(params.get("ef_search", 32))
         self._overquery_factor = params.get("overquery_factor")
         self._oversample_factor = params.get("oversample_factor")
         self._filter_type = params.get("filter_type")
         self._filter_body = params.get("filter_body")
         self._space_type = params.get("space_type", "l2")
         self._is_nested = "." in self._field  # mirrors params.py NESTED_FIELD_SEPARATOR
-        self._disable_source = params.get("disable-source", False)
         
-        # Ensure queries and ground-truth files are present locally.
-        # If the params carry an HTTP(S) URL the file is downloaded once and
-        # cached under $BENCHMARK_HOME/.osb/benchmarks/data/msmarco/.
-        self._queries_file = _ensure_local_file(self._queries_file)
-        self._ground_truth_file = _ensure_local_file(self._ground_truth_file)
-
         # .fvec format: 4 bytes (int32) for dimension + (dims * 4) bytes for float32 data
         self._record_size_bytes = 4 + (self._dims * 4)
         self._data = np.memmap(self._queries_file, dtype='uint8', mode='r')
-
+        
         self._ground_truth = self._load_ivec_ground_truth()
         
         self._num_queries = len(self._ground_truth)
@@ -264,21 +174,9 @@ class RandomSearchParamSource(ParamSource):
         print("="*60 + "\n")
         # ===== END DEBUG =====
 
-    def close(self):
-        if hasattr(self, "_data") and self._data is not None:
-            if hasattr(self._data, "_mmap") and self._data._mmap is not None:
-                try:
-                    self._data._mmap.close()
-                except Exception:
-                    pass
-            self._data = None
-
-    def __del__(self):
-        self.close()
-
     def _load_ivec_ground_truth(self):
         """
-        Custom parser extension to dynamically consume standard .ivec length prefixes
+        Custom parser extension to dynamically consume standard .ivec length prefixes 
         to ensure data indices are not bit-shifted.
         """
         gt_list = []
@@ -300,8 +198,6 @@ class RandomSearchParamSource(ParamSource):
                     if len(row_data) == k_length:
                         # Slice or pad to enforce matching dimensions if required
                         gt_list.append(row_data[:self._top_k])
-                    else:
-                        break
         except Exception as e:
             raise RuntimeError(f"Failed to parse .ivec ground truth using custom client reader: {str(e)}")
             
@@ -326,7 +222,6 @@ class RandomSearchParamSource(ParamSource):
         partition._rng.shuffle(partition._query_indices)
         partition._current_idx = 0
         partition._overquery_factor = self._overquery_factor
-        partition._disable_source = self._disable_source
         return partition
 
     def params(self):
@@ -362,21 +257,16 @@ class RandomSearchParamSource(ParamSource):
             # We copy to prevent cross-pollination between iterations
             self._deep_merge(query, copy.deepcopy(self._query_body))
 
-        # Suppress _source when disable-source is set. The recall runner reads
-        # the hit's top-level _id directly, so no docvalue_fields needed here
-        # since msmarco uses _id as the identifier.
-        if self._disable_source:
-            query["_source"] = False
 
         # Convert to string to match opensearch _id
         ground_truth_ids = [str(int(x)) for x in self._ground_truth[query_idx]]
         
         result = {
-            "index": self._index_name,
-            "size": self._top_k,
+            "index": self._index_name, 
+            "size": self._top_k, 
             "k": self._top_k,
             "operation-type": self._operation_type,
-            "body": query,
+            "body": query, 
             "neighbors": ground_truth_ids, # Convert to list for JSON
             "detailed-results": self._detailed_results,
             "request-params": {"size": self._top_k}
