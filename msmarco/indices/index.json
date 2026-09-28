@@ -36,8 +36,8 @@
         {%- if hnsw_ef_search is defined and hnsw_ef_search %}
         ,"knn.algo_param.ef_search": {{ hnsw_ef_search }}
         {%- endif %}
-        {%- if derived_source_enabled is defined and derived_source_enabled %}
-        ,"knn.derived_source.enabled": true
+        {%- if use_derived_source is defined %}
+        ,"knn.derived_source.enabled": {{ use_derived_source | tojson }}
         {%- endif %}
         {%- if remote_index_build_enabled is defined and remote_index_build_enabled %}
         ,"knn.remote_index_build.enabled": true
