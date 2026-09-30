@@ -32,6 +32,25 @@
       }
     },
     {
+      "name": "force-merge-seed",
+      "operation": {
+        "operation-type": "force-merge",
+        "index": "{{ target_index_name | default('target_index') }}",
+        "request-timeout": {{ target_index_force_merge_timeout | default(28800) }},
+        "mode": "polling",
+        "max-num-segments": {{ target_index_max_num_segments | default(1) }},
+        "include-in-results_publishing": true
+      }
+    },
+    {
+      "name": "force-merge-refresh",
+      "operation": {
+        "operation-type": "refresh",
+        "index": "{{ target_index_name | default('target_index') }}",
+        "request-timeout": 7200
+      }
+    },
+    {
       "parallel": {
         "clients": {{ (target_index_bulk_indexing_clients | default(8)) + (search_clients | default(1)) }},
         "tasks": [
