@@ -12,7 +12,7 @@
         ,"translog.flush_threshold_size": "{{ translog_flush_threshold_size }}"
         {%- endif %}
         {%- if refresh_interval is defined %}
-        ,"refresh_interval": {{ refresh_interval }}
+        ,"refresh_interval": "{{ refresh_interval }}"
         {%- endif %}
         {%- if max_merged_segment is defined %}
         ,"merge": {
