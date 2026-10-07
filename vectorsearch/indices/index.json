@@ -15,7 +15,7 @@
         ,"translog.flush_threshold_size": "{{ translog_flush_threshold_size }}"
         {%- endif %}
         {%- if refresh_interval is defined %}
-        ,"refresh_interval": {{ refresh_interval }}
+        ,"refresh_interval": "{{ refresh_interval }}"
         {%- endif %}
         {%- if merge_scheduler_auto_throttle is defined %}
         ,"merge.scheduler.auto_throttle": {{ merge_scheduler_auto_throttle | tojson }}
