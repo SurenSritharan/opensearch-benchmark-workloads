@@ -114,6 +114,9 @@
                   {% if overquery_factor is defined %}
                   "overquery_factor": {{ overquery_factor }},
                   {% endif %}
+                  {% if ef_search is defined %}
+                  "ef_search": {{ ef_search }},
+                  {% endif %}
                   "body": "{{ query_body | safe }}"
                 },
                 "clients": {{ search_clients | default(1) }},
@@ -242,6 +245,9 @@
             {% endif %}
             {% if overquery_factor is defined %}
             "overquery_factor": {{ overquery_factor }},
+            {% endif %}
+            {% if ef_search is defined %}
+            "ef_search": {{ ef_search }},
             {% endif %}
             "body": "{{ query_body | safe }}"
           },
