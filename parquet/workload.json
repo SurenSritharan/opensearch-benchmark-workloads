@@ -10,6 +10,23 @@
 {%- set _default_gt_file = 'parquet-vectors-gt-' + _count_label + '.json' -%}
 {%- set _index = target_index_name | default(_default_index) -%}
 {%- set _gt_file = queries_file | default(_default_gt_file) -%}
+{#- Column mapping / real-query params shared by every parquet-bulk-reader task. -#}
+{%- macro source_columns() -%}
+{%- if id_column is defined %}"id_column": "{{ id_column }}",{% endif %}
+{%- if text_column is defined %}"text_column": "{{ text_column }}",{% endif %}
+{%- if title_column is defined %}"title_column": "{{ title_column }}",{% endif %}
+{%- if extra_columns is defined %}"extra_columns": {{ extra_columns | tojson }},{% endif %}
+{%- if derived_fields is defined %}"derived_fields": {{ derived_fields | tojson }},{% endif %}
+{%- if include_pid is defined %}"include_pid": {{ include_pid | tojson }},{% endif %}
+{%- if real_queries_file is defined %}"real_queries_file": "{{ real_queries_file }}",{% endif %}
+{%- endmacro -%}
+{#- Search params shared by every vector-search-reader task. -#}
+{%- macro search_extras() -%}
+{%- if filter_body is defined %}"filter_body": {{ filter_body | tojson }},{% endif %}
+{%- if filter_mode is defined %}"filter_mode": "{{ filter_mode }}",{% endif %}
+{%- if qrel_id_separator is defined %}"qrel_id_separator": "{{ qrel_id_separator }}",{% endif %}
+{%- if ndcg_summary_file is defined %}"ndcg_summary_file": "{{ ndcg_summary_file }}",{% endif %}
+{%- endmacro -%}
 {
   "description": "Parquet Vector Benchmark Workload",
   "indices": [
@@ -70,6 +87,7 @@
             {%- if hf_dataset_dir is defined %}
             "hf_dataset_dir": "{{ hf_dataset_dir }}",
             {%- endif %}
+            {{ source_columns() }}
             "detailed-results": {{ detailed_results | default(false) | tojson }}
           },
           "clients": {{ target_index_bulk_indexing_clients | default(1) }}
@@ -111,6 +129,7 @@
                   {%- if hf_dataset_dir is defined %}
                   "hf_dataset_dir": "{{ hf_dataset_dir }}",
                   {%- endif %}
+                  {{ source_columns() }}
                   "detailed-results": {{ detailed_results | default(false) | tojson }}
                 },
                 "clients": {{ target_index_bulk_indexing_clients | default(1) }}
@@ -118,8 +137,9 @@
               {
                 "name": "vector-search-queries",
                 "operation": {
-                  "operation-type": "vector-search",
+                  "operation-type": "vector-search-ndcg",
                   "param-source": "vector-search-reader",
+                  {{ search_extras() }}
                   "index": "{{ _index }}",
                   "target_vector_count": {{ _n }},
                   "target_field_name": "{{ target_field_name | default('emb') }}",
@@ -203,8 +223,9 @@
         {
           "name": "vector-search-queries",
           "operation": {
-            "operation-type": "vector-search",
+            "operation-type": "vector-search-ndcg",
             "param-source": "vector-search-reader",
+            {{ search_extras() }}
             "index": "{{ _index }}",
             "target_vector_count": {{ _n }},
             "target_field_name": "{{ target_field_name | default('emb') }}",
@@ -281,8 +302,9 @@
         {
           "name": "hybrid-search-queries",
           "operation": {
-            "operation-type": "vector-search",
+            "operation-type": "vector-search-ndcg",
             "param-source": "vector-search-reader",
+            {{ search_extras() }}
             "index": "{{ _index }}",
             "target_vector_count": {{ _n }},
             "target_field_name": "{{ target_field_name | default('emb') }}",
@@ -291,6 +313,70 @@
             "ef_search": {{ ef_search | default(64) }},
             "search_mode": "hybrid",
             "search_pipeline": "{{ search_pipeline | default('hybrid-search-pipeline') }}",
+            "hybrid_text_field": "{{ hybrid_text_field | default('text') }}",
+            "detailed-results": true
+          },
+          "clients": {{ search_clients | default(1) }},
+          {% if time_period is defined %}
+          "warmup-time-period": {{ warmup_time_period | default(60) }},
+          "time-period": {{ time_period }}
+          {% else %}
+          "warmup-iterations": {{ warmup_iterations | default(0) }},
+          "iterations": {{ iterations | default(1000) }}
+          {% endif %}
+        }
+      ]
+    },
+    {
+      "name": "bm25-search",
+      "description": "BM25 only (multi_match on title + text): the keyword leg of hybrid on its own",
+      "default": false,
+      "schedule": [
+        {
+          "name": "bm25-search-queries",
+          "operation": {
+            "operation-type": "vector-search-ndcg",
+            "param-source": "vector-search-reader",
+            {{ search_extras() }}
+            "index": "{{ _index }}",
+            "target_vector_count": {{ _n }},
+            "target_field_name": "{{ target_field_name | default('emb') }}",
+            "queries_file": "{{ _gt_file }}",
+            "k": {{ query_k | default(10) }},
+            "ef_search": {{ ef_search | default(64) }},
+            "search_mode": "bm25",
+            "hybrid_text_field": "{{ hybrid_text_field | default('text') }}",
+            "detailed-results": true
+          },
+          "clients": {{ search_clients | default(1) }},
+          {% if time_period is defined %}
+          "warmup-time-period": {{ warmup_time_period | default(60) }},
+          "time-period": {{ time_period }}
+          {% else %}
+          "warmup-iterations": {{ warmup_iterations | default(0) }},
+          "iterations": {{ iterations | default(1000) }}
+          {% endif %}
+        }
+      ]
+    },
+    {
+      "name": "openrag-hybrid-search",
+      "description": "OpenRAG retrieval query: bool/should of dis_max(knn)^0.7 + fuzzy multi_match^0.3 + match_phrase_prefix^0.25, raw scores, no search pipeline",
+      "default": false,
+      "schedule": [
+        {
+          "name": "openrag-hybrid-search-queries",
+          "operation": {
+            "operation-type": "vector-search-ndcg",
+            "param-source": "vector-search-reader",
+            {{ search_extras() }}
+            "index": "{{ _index }}",
+            "target_vector_count": {{ _n }},
+            "target_field_name": "{{ target_field_name | default('emb') }}",
+            "queries_file": "{{ _gt_file }}",
+            "k": {{ query_k | default(10) }},
+            "ef_search": {{ ef_search | default(64) }},
+            "search_mode": "openrag-hybrid",
             "hybrid_text_field": "{{ hybrid_text_field | default('text') }}",
             "detailed-results": true
           },

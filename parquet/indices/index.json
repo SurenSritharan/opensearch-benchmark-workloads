@@ -55,6 +55,12 @@
     "properties": {
       "title": { "type": "text" },
       "text":  { "type": "text" },
+      {%- if include_pid is defined and include_pid %}
+      "pid":   { "type": "keyword" },
+      {%- endif %}
+      {%- for field in keyword_fields | default([]) %}
+      "{{ field }}": { "type": "keyword", "ignore_above": 2048 },
+      {%- endfor %}
       "{{ target_field_name | default('emb') }}": {
         "type": "knn_vector",
         "dimension": {{ target_index_dimension | default(1024) }},
