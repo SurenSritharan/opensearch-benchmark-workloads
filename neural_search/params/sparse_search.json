@@ -1,0 +1,11 @@
+{
+  "passage_embedding_type": "rank_features",
+  "index_name": "quora-sparse-embedding",
+  "index_body": "indices/quora.json",
+  "corpora_name": "quora",
+  "ingest_percentage": 100,
+  "variable_queries": 10000,
+  "warmup_time_period": 5,
+  "query_size": 100,
+  "default_ingest_pipeline": "nlp-default-ingest-pipeline-sparse"
+}
