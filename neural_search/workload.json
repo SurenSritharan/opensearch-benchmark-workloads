@@ -40,6 +40,7 @@
       "documents": [
         {
           "source-file": "msmarco.zip",
+          "target-file": "msmarco/corpus.jsonl",
           "document-count": 8841823,
           "compressed-bytes": 1082258632,
           "uncompressed-bytes": 3568655380
