@@ -25,6 +25,9 @@
       "operation": "deploy-ml-model"
     },
     {
+      "operation": "save-embedding-model-id"
+    },
+    {
       "operation": "create-text-embedding-processor-ingest-pipeline"
     },
     {{ benchmark.collect(parts="common/create_index_and_ingest_document.json") }},
@@ -60,6 +63,9 @@
       "operation": "deploy-ml-model"
     },
     {
+      "operation": "save-embedding-model-id"
+    },
+    {
       "operation": "create-text-embedding-processor-ingest-pipeline"
     },
     {{ benchmark.collect(parts="common/create_index_and_ingest_document.json") }}
@@ -83,5 +89,132 @@
       "clients": {{ search_clients | default(1)}}
     }
   ]
+},
+{
+  "name": "semantic-search-with-reranker",
+  "description": "Deploys embedding and re-ranker models, creates ingest and rerank search pipelines, indexes corpus, and runs semantic search with cross-encoder reranking.",
+  "default": false,
+  "schedule": [
+    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-ingest-pipeline"
+    },
+    {
+      "operation": "delete-rerank-search-pipeline"
+    },
+    {
+      "operation": "delete-ml-model-sentence-transformer"
+    },
+    {
+      "operation": "delete-ml-model-reranker"
+    },
+    {
+      "operation": "put-cluster-settings"
+    },
+    {%- if concurrent_segment_search_enabled is defined %}
+    {
+      "operation": "put-concurrent-segment-search-setting"
+    },
+    {%- endif %}
+    {
+      "operation": "register-ml-model-sentence-transformer"
+    },
+    {
+      "operation": "deploy-ml-model"
+    },
+    {
+      "operation": "save-embedding-model-id"
+    },
+    {
+      "operation": "create-text-embedding-processor-ingest-pipeline"
+    },
+    {
+      "operation": "register-ml-model-reranker"
+    },
+    {
+      "operation": "deploy-ml-model"
+    },
+    {
+      "operation": "save-reranker-model-id"
+    },
+    {
+      "operation": "create-rerank-search-pipeline"
+    },
+    {{ benchmark.collect(parts="common/create_index_and_ingest_document.json") }},
+    {{ benchmark.collect(parts="common/match_all_search.json") }},
+    {
+      "operation": "semantic-search-with-reranker",
+      "warmup-iterations": {{warmup_iterations | default(100) | tojson}},
+      "iterations": {{iterations | default(100) | tojson }},
+      "target-throughput": {{ target_throughput | default(0) | tojson}},
+      "clients": {{ search_clients | default(1)}}
+    }
+  ]
+},
+{
+  "name": "semantic-search-with-reranker-create-resources-and-index-document",
+  "description": "Create resources (embedding model, reranker model, pipelines and index) for Semantic search with reranker, then ingest the corpus.",
+  "default": false,
+  "schedule": [
+    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-ingest-pipeline"
+    },
+    {
+      "operation": "delete-rerank-search-pipeline"
+    },
+    {
+      "operation": "delete-ml-model-sentence-transformer"
+    },
+    {
+      "operation": "delete-ml-model-reranker"
+    },
+    {
+      "operation": "put-cluster-settings"
+    },
+    {
+      "operation": "register-ml-model-sentence-transformer"
+    },
+    {
+      "operation": "deploy-ml-model"
+    },
+    {
+      "operation": "save-embedding-model-id"
+    },
+    {
+      "operation": "create-text-embedding-processor-ingest-pipeline"
+    },
+    {
+      "operation": "register-ml-model-reranker"
+    },
+    {
+      "operation": "deploy-ml-model"
+    },
+    {
+      "operation": "save-reranker-model-id"
+    },
+    {
+      "operation": "create-rerank-search-pipeline"
+    },
+    {{ benchmark.collect(parts="common/create_index_and_ingest_document.json") }}
+  ]
+},
+{
+  "name": "semantic-search-with-reranker-query-only",
+  "description": "Runs neural search queries with reranker pipeline, applicable when models, pipelines, and index already exist.",
+  "default": false,
+  "schedule": [
+    {%- if concurrent_segment_search_enabled is defined %}
+    {
+      "operation": "put-concurrent-segment-search-setting"
+    },
+    {%- endif %}
+    {
+      "operation": "semantic-search-with-reranker",
+      "warmup-iterations": {{warmup_iterations | default(100) | tojson}},
+      "iterations": {{iterations | default(100) | tojson }},
+      "target-throughput": {{ target_throughput | default(0) | tojson}},
+      "clients": {{ search_clients | default(1)}}
+    }
+  ]
 }
-

@@ -103,13 +103,64 @@
 {
   "name": "register-ml-model-sentence-transformer",
   "operation-type": "register-ml-model",
-  "model-name": "{{ model_name | default('huggingface/sentence-transformers/all-mpnet-base-v2')}}",
-  "model-version": "{{ model_version | default('1.0.2') }}",
+  "model-name": "{{ model_name | default('huggingface/sentence-transformers/all-MiniLM-L6-v2')}}",
+  "model-version": "{{ model_version | default('1.0.1') }}",
   "model-format": "{{ model_format | default('TORCH_SCRIPT') }}",
   "model-config-file": "{{ model_config_file | default('') }}"
 },
 {
   "name": "delete-ml-model-sentence-transformer",
   "operation-type": "delete-ml-model",
-  "model-name": "{{ model_name | default('huggingface/sentence-transformers/all-mpnet-base-v2')}}"
+  "model-name": "{{ model_name | default('huggingface/sentence-transformers/all-MiniLM-L6-v2')}}"
+},
+{
+  "name": "register-ml-model-reranker",
+  "operation-type": "register-ml-model",
+  "model-name": "{{ reranker_model_name | default('huggingface/cross-encoder/ms-marco-MiniLM-L-6-v2') }}",
+  "model-version": "{{ reranker_model_version | default('1.0.1') }}",
+  "model-format": "{{ reranker_model_format | default('TORCH_SCRIPT') }}",
+  "model-config-file": "{{ reranker_model_config_file | default('') }}"
+},
+{
+  "name": "delete-ml-model-reranker",
+  "operation-type": "delete-ml-model",
+  "model-name": "{{ reranker_model_name | default('huggingface/cross-encoder/ms-marco-MiniLM-L-6-v2') }}"
+},
+{
+  "name": "save-embedding-model-id",
+  "operation-type": "save-model-id",
+  "target": "embedding_model_id.json"
+},
+{
+  "name": "save-reranker-model-id",
+  "operation-type": "save-model-id",
+  "target": "reranker_model_id.json"
+},
+{
+  "name": "create-rerank-search-pipeline",
+  "operation-type": "create-search-pipeline",
+  "param-source": "create-rerank-search-pipeline-source",
+  "id": "{{ rerank_search_pipeline_id | default('rerank-search-pipeline') }}",
+  "body": {
+    "description": "Cross-encoder re-ranking search pipeline",
+    "response_processors": [
+      {
+        "rerank": {
+          "ml_opensearch": {
+            "model_id": ""
+          },
+          "context": {
+            "document_fields": [
+              "text"
+            ]
+          }
+        }
+      }
+    ]
+  }
+},
+{
+  "name": "delete-rerank-search-pipeline",
+  "operation-type": "delete-pipeline",
+  "id": "{{ rerank_search_pipeline_id | default('rerank-search-pipeline') }}"
 }

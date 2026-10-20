@@ -40,7 +40,8 @@ def inject_model_id(params: dict, model_id_file: str = "model_id.json"):
     :param params: The dictionary to modify.
     :param model_id_file: File containing a JSON object with 'model_id'.
     """
-    with open(model_id_file, "r") as f:
+    target_file = model_id_file if os.path.exists(model_id_file) else "model_id.json"
+    with open(target_file, "r") as f:
         model_id = json.load(f).get("model_id")
     params["model_id"] = model_id
 
@@ -58,6 +59,7 @@ def inject_query_text(params: dict):
 
 
 def ingest_pipeline_param_source(workload, params, **kwargs):
+    model_id_file = "embedding_model_id.json" if os.path.exists("embedding_model_id.json") else "model_id.json"
     supported_processors = ['sparse_encoding', 'text_embedding', 'text_image_embedding']
     processors = params['body'].get('processors', [])
 
@@ -67,12 +69,37 @@ def ingest_pipeline_param_source(workload, params, **kwargs):
         for name in supported_processors:
             if name in processor:
                 found_supported_processor = True
-                inject_model_id(processor[name])
+                inject_model_id(processor[name], model_id_file=model_id_file)
 
     if not found_supported_processor:
         raise ValueError(f"No supported processor types found in: {processors}")
 
     return params
+
+def rerank_search_pipeline_param_source(workload, params, **kwargs):
+    model_id_file = "reranker_model_id.json" if os.path.exists("reranker_model_id.json") else "model_id.json"
+    with open(model_id_file, "r") as f:
+        model_id = json.load(f).get("model_id")
+
+    processors = params.get("body", {}).get("response_processors", [])
+    for processor in processors:
+        if "rerank" in processor:
+            rerank = processor["rerank"]
+            if "ml_opensearch" in rerank:
+                rerank["ml_opensearch"]["model_id"] = model_id
+    return params
+
+class SaveModelId:
+    async def __call__(self, opensearch, params):
+        import shutil
+        source = params.get("source", "model_id.json")
+        target = params.get("target", "embedding_model_id.json")
+        if os.path.exists(source):
+            shutil.copyfile(source, target)
+        return {"weight": 1, "unit": "ops", "success": True}
+
+    def __repr__(self, *args, **kwargs):
+        return "save-model-id"
 
 class QueryParamSource:
     def __init__(self, workload, params, **kwargs):
@@ -156,7 +183,8 @@ class NeuralQueryParamSource(QueryParamSource):
             except KeyError:
                 raise KeyError(f"Key '{embedding_field}' not found in {neural_query}")
 
-            inject_model_id(embedding_query)
+            model_id_file = "embedding_model_id.json" if os.path.exists("embedding_model_id.json") else "model_id.json"
+            inject_model_id(embedding_query, model_id_file=model_id_file)
 
         if params.get("variable-queries", 0) > 0:
             inject_query_text(embedding_query)
@@ -333,11 +361,13 @@ class CreateIndexWithSemanticFieldParamSource:
         }
 
 def register(registry):
+    registry.register_runner("save-model-id", SaveModelId(), async_runner=True)
     registry.register_param_source("neural-search-source", NeuralQueryParamSource)
     registry.register_param_source("neural-hybrid-search-source", NeuralHybridQueryParamSource)
     registry.register_param_source("neural-hybrid-search-bool-source", NeuralHybridQueryBoolParamSource)
     registry.register_param_source("neural-hybrid-search-complex-source", NeuralHybridQueryComplexParamSource)
     registry.register_param_source("neural-multimodal-search-source", NeuralMultimodalQueryParamSource)
     registry.register_param_source("create-ingest-pipeline-source", ingest_pipeline_param_source)
+    registry.register_param_source("create-rerank-search-pipeline-source", rerank_search_pipeline_param_source)
     registry.register_param_source("create-index-with-semantic-field-source", CreateIndexWithSemanticFieldParamSource)
 
