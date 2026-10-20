@@ -3,7 +3,9 @@
   "description": "Creates model and pipelines, indexes the corpus and then runs queries with Neural Sparse Search.",
   "default": true,
   "schedule": [
-    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-index"
+    },
     {
       "operation": "delete-ingest-pipeline"
     },
@@ -43,7 +45,9 @@
   "description": "Create resourses (model, pipeline and index) for Sparse search, then ingest the corpus",
   "default": false,
   "schedule": [
-    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-index"
+    },
     {
       "operation": "delete-ingest-pipeline"
     },

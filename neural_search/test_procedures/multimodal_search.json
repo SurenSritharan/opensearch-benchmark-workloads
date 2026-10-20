@@ -3,7 +3,9 @@
   "description": "Indexes the corpus and then runs neural clause queries with Multimodal search.",
   "default": false,
   "schedule": [
-    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-index"
+    },
     {
       "operation": "delete-ingest-pipeline"
     },
@@ -49,7 +51,9 @@
   "description": "Create resourses (model, pipeline and index) for Multimodal search, then ingest the corpus",
   "default": false,
   "schedule": [
-    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-index"
+    },
     {
       "operation": "delete-ingest-pipeline"
     },
@@ -96,4 +100,3 @@
     }
   ]
 }
-
