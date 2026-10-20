@@ -3,7 +3,9 @@
   "description": "Creates model, indexes the corpus and then runs neural queries against the semantic field.",
   "default": false,
   "schedule": [
-    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-index"
+    },
     {
       "operation": "put-cluster-settings"
     },
@@ -33,7 +35,9 @@
   "description": "Creates model and indexes the corpus for the semantic field.",
   "default": false,
   "schedule": [
-    {{ benchmark.collect(parts="../../common_operations/delete_index.json") }},
+    {
+      "operation": "delete-index"
+    },
     {
       "operation": "put-cluster-settings"
     },
