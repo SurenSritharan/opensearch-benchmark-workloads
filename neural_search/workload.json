@@ -33,6 +33,18 @@
           "uncompressed-bytes": 1156323739
         }
       ]
+    },
+    {
+      "name": "msmarco",
+      "base-url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets",
+      "documents": [
+        {
+          "source-file": "msmarco.zip",
+          "document-count": 8841823,
+          "compressed-bytes": 1082258632,
+          "uncompressed-bytes": 3568655380
+        }
+      ]
     }
   ],
   "operations": [

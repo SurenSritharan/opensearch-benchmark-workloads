@@ -3,6 +3,7 @@
     "name": "quora",
     "base-url": "https://dbyiw3u3rf9yr.cloudfront.net/corpora/neural_search",
     "source-file": "queries.json.bz2",
+    "target-file": "queries.json",
     "compressed-bytes": 263045,
     "uncompressed-bytes": 1460859
   },
@@ -10,7 +11,16 @@
     "name": "abo",
     "base-url": "https://dbyiw3u3rf9yr.cloudfront.net/corpora/neural_search",
     "source-file": "abo_queries.json.bz2",
+    "target-file": "abo_queries.json",
     "compressed-bytes": 6335918,
     "uncompressed-bytes": 9109124
+  },
+  {
+    "name": "msmarco",
+    "base-url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets",
+    "source-file": "msmarco.zip",
+    "target-file": "msmarco/queries.jsonl",
+    "compressed-bytes": 1082258632,
+    "uncompressed-bytes": 40420611
   }
 ]

@@ -41,22 +41,10 @@ def inject_model_id(params: dict, model_id_file: str = "model_id.json"):
     :param model_id_file: File containing a JSON object with 'model_id'.
     """
     target_file = model_id_file if os.path.exists(model_id_file) else "model_id.json"
-    with open(target_file, "r") as f:
-        model_id = json.load(f).get("model_id")
-    params["model_id"] = model_id
-
-def inject_query_text(params: dict):
-    """
-    Injects a random 'query_text' from 'queries.json' in the script directory
-    into params at '.query_text'.
-    """
-    queries_file = os.path.join(script_dir, "queries.json")
-    with open(queries_file, "r") as f:
-        lines = f.read().splitlines()
-        random_line = random.choice(lines)
-        query_obj = json.loads(random_line)
-        params['query_text'] = query_obj.get("text")
-
+    if os.path.exists(target_file):
+        with open(target_file, "r") as f:
+            model_id = json.load(f).get("model_id")
+        params["model_id"] = model_id
 
 def ingest_pipeline_param_source(workload, params, **kwargs):
     model_id_file = "embedding_model_id.json" if os.path.exists("embedding_model_id.json") else "model_id.json"
@@ -120,38 +108,64 @@ class QueryParamSource:
         self.infinite = True
 
         self.dataset_name = self.get_dataset_name()
+        self.queries = []
         self.load_queries_file()
 
     def get_dataset_name(self):
-        raise NotImplementedError("Subclasses must implement get_dataset_name()")
+        return self._params.get("corpora_name", self._params.get("corpora", self._params.get("dataset", "quora")))
 
     def load_queries_file(self):
-        if self._params['variable-queries'] > 0:
-            with open(script_dir + os.sep + 'workload_queries.json', 'r') as f:
-                data = json.load(f)
-                for item in data:
-                    if item['name'] == self.dataset_name:
-                        source_file = item['source-file']
-                        base_url = item['base-url']
-                        compressed_bytes = item['compressed-bytes']
-                        uncompressed_bytes = item['uncompressed-bytes']
-                        compressed_path = script_dir + os.sep + source_file
-                        uncompressed_path = script_dir + os.sep + Path(source_file).stem
-            if not os.path.exists(compressed_path):
-                downloader = Downloader(False, False)
-                downloader.download(base_url, None, compressed_path, compressed_bytes)
+        if self._params.get('variable-queries', 0) > 0:
+            manifest_file = os.path.join(script_dir, "workload_queries.json")
+            if not os.path.exists(manifest_file):
+                return
+            with open(manifest_file, "r") as f:
+                manifest = json.load(f)
+
+            entry = next((item for item in manifest if item.get("name") == self.dataset_name), None)
+            if not entry:
+                # Fallback to first entry if dataset_name is not matched
+                entry = manifest[0] if manifest else None
+            if not entry:
+                return
+
+            source_file = entry["source-file"]
+            base_url = entry["base-url"]
+            compressed_bytes = entry.get("compressed-bytes")
+            uncompressed_bytes = entry.get("uncompressed-bytes")
+            target_file = entry.get("target-file", Path(source_file).stem)
+
+            compressed_path = os.path.join(script_dir, source_file)
+            uncompressed_path = os.path.join(script_dir, target_file)
+
             if not os.path.exists(uncompressed_path):
+                if not os.path.exists(compressed_path):
+                    downloader = Downloader(False, False)
+                    downloader.download(base_url, None, compressed_path, compressed_bytes)
                 decompressor = Decompressor()
                 decompressor.decompress(compressed_path, uncompressed_path, uncompressed_bytes)
+
+            if os.path.exists(uncompressed_path):
+                with open(uncompressed_path, "r") as f:
+                    self.queries = f.read().splitlines()
+
+    def get_random_query_obj(self):
+        if not self.queries:
+            return None
+        line = random.choice(self.queries)
+        return json.loads(line)
+
+    def get_random_query_text(self, field_name: str = "text") -> str:
+        obj = self.get_random_query_obj()
+        if obj:
+            return obj.get(field_name, "")
+        return "What are some of the best science projects?"
 
     def partition(self, partition_index, total_partitions):
         return self
 
 
 class NeuralQueryParamSource(QueryParamSource):
-    def get_dataset_name(self):
-        return 'quora'
-
     def params(self):
         params = self._params
         is_query_semantic_field = params.get('is_query_semantic_field', False)
@@ -159,7 +173,7 @@ class NeuralQueryParamSource(QueryParamSource):
             embedding_query = get_by_path(params, "body.query.neural.text")
         else:
             search_operation_name = params.get('name', None)
-            if search_operation_name == "semantic-search":
+            if search_operation_name in ("semantic-search", "semantic-search-with-reranker"):
                 query_name = "neural"
             elif search_operation_name == "sparse-search":
                 query_name = "neural_sparse"
@@ -187,140 +201,103 @@ class NeuralQueryParamSource(QueryParamSource):
             inject_model_id(embedding_query, model_id_file=model_id_file)
 
         if params.get("variable-queries", 0) > 0:
-            inject_query_text(embedding_query)
+            embedding_query["query_text"] = self.get_random_query_text("text")
 
         return params
 
 class NeuralHybridQueryParamSource(QueryParamSource):
-    def get_dataset_name(self):
-        return 'quora'
-
     def params(self):
         params = self._params
         hybrid_queries = params['body']['query']['hybrid']['queries']
 
-        with open('model_id.json', 'r') as f:
+        model_id_file = "embedding_model_id.json" if os.path.exists("embedding_model_id.json") else "model_id.json"
+        with open(model_id_file, 'r') as f:
             d = json.loads(f.read())
             hybrid_queries[1]['neural']['passage_embedding']['model_id'] = d['model_id']
 
         count = self._params.get("variable-queries", 0)
         if count > 0:
-            script_dir = os.path.dirname(os.path.realpath(__file__))
-            with open(script_dir + '/queries.json', 'r') as f:
-                lines = f.read().splitlines()
-                line = random.choice(lines)
-                query_text = json.loads(line)['text']
-                hybrid_queries[0]['match']['text']['query'] = query_text
-                hybrid_queries[1]['neural']['passage_embedding']['query_text'] = query_text
+            query_text = self.get_random_query_text("text")
+            hybrid_queries[0]['match']['text']['query'] = query_text
+            hybrid_queries[1]['neural']['passage_embedding']['query_text'] = query_text
         return params
 
 class NeuralHybridQueryBoolParamSource(QueryParamSource):
-    def get_dataset_name(self):
-        return 'quora'
-
     def params(self):
         params = self._params
         bool_should_query = params['body']['query']['bool']['should']
 
-        with open('model_id.json', 'r') as f:
+        model_id_file = "embedding_model_id.json" if os.path.exists("embedding_model_id.json") else "model_id.json"
+        with open(model_id_file, 'r') as f:
             d = json.loads(f.read())
             bool_should_query[1]['neural']['passage_embedding']['model_id'] = d['model_id']
 
         count = self._params.get("variable-queries", 0)
         if count > 0:
-            script_dir = os.path.dirname(os.path.realpath(__file__))
-            with open(script_dir + '/queries.json', 'r') as f:
-                lines = f.read().splitlines()
-                line = random.choice(lines)
-                query_text = json.loads(line)['text']
-                bool_should_query[0]['match']['text']['query'] = query_text
-                bool_should_query[1]['neural']['passage_embedding']['query_text'] = query_text
+            query_text = self.get_random_query_text("text")
+            bool_should_query[0]['match']['text']['query'] = query_text
+            bool_should_query[1]['neural']['passage_embedding']['query_text'] = query_text
         return params
 
 
 class NeuralHybridQueryComplexParamSource(QueryParamSource):
-    def get_dataset_name(self):
-        return 'quora'
-
     def params(self):
         params = self._params
         hybrid_queries = params['body']['query']['hybrid']['queries']
 
-        with open('model_id.json', 'r') as f:
+        model_id_file = "embedding_model_id.json" if os.path.exists("embedding_model_id.json") else "model_id.json"
+        with open(model_id_file, 'r') as f:
             d = json.loads(f.read())
             hybrid_queries[2]['neural']['passage_embedding']['model_id'] = d['model_id']
 
         def tokenize_query(query_text: str) -> List[str]:
-            """
-            Tokenizes a query string into a list of individual words by converting to lowercase
-            and removing special characters.
-
-            Args:
-                query_text (str): The input text string to be tokenized.
-
-            Returns:
-                List[str]: A list of lowercase tokens containing only alphanumeric characters.
-
-            Note:
-                - Special characters are removed
-                - Text is converted to lowercase
-                - Only alphanumeric characters and spaces are retained
-            """
             clean_text = re.sub(r'[^a-zA-Z0-9\s]', '', query_text.lower())
             tokens = clean_text.split()
             return tokens
 
         count = self._params.get("variable-queries", 0)
         if count > 0:
-            script_dir = os.path.dirname(os.path.realpath(__file__))
-            with open(script_dir + '/queries.json', 'r') as f:
-                lines = f.read().splitlines()
-                line = random.choice(lines)
-                query_text = json.loads(line)['text']
+            query_text = self.get_random_query_text("text")
 
-                tokens = tokenize_query(query_text)
-                # Get word frequency to identify important terms
-                word_freq = Counter(tokens)
-                # Create phrases from consecutive words (bigrams)
-                phrases = [f"{tokens[i]} {tokens[i + 1]}" for i in range(len(tokens) - 1)]
-                # Identify potentially important terms (you might want to customize this)
-                important_terms = [word for word, freq in word_freq.items() if len(word) > 2]
+            tokens = tokenize_query(query_text)
+            word_freq = Counter(tokens)
+            phrases = [f"{tokens[i]} {tokens[i + 1]}" for i in range(len(tokens) - 1)]
+            important_terms = [word for word, freq in word_freq.items() if len(word) > 2]
 
-                hybrid_queries[0]['match_phrase']['text']['query'] = query_text
-                hybrid_queries[1]['match']['text']['query'] = " ".join(important_terms)
-                hybrid_queries[2]['neural']['passage_embedding']['query_text'] = query_text
+            hybrid_queries[0]['match_phrase']['text']['query'] = query_text
+            hybrid_queries[1]['match']['text']['query'] = " ".join(important_terms)
+            hybrid_queries[2]['neural']['passage_embedding']['query_text'] = query_text
 
-                current_length = len(hybrid_queries)
-                new_phrase_queries = [
-                    {
-                        "match_phrase": {
-                            "text": {
-                                "query": phrase,
-                                "boost": 1.5,
-                                "slop": 1
-                            }
+            current_length = len(hybrid_queries)
+            new_phrase_queries = [
+                {
+                    "match_phrase": {
+                        "text": {
+                            "query": phrase,
+                            "boost": 1.5,
+                            "slop": 1
                         }
-                    } for phrase in phrases[:2]
-                ]
+                    }
+                } for phrase in phrases[:2]
+            ]
 
-                if current_length == 3:
-                    # If we have exactly 3 elements, append new ones (up to the limit of 5)
-                    hybrid_queries.extend(new_phrase_queries)
-                else:
-                    # If we have more than 3 elements, remove excess elements and add new ones
-                    del hybrid_queries[3:]  # Remove all elements starting from index 3
-                    hybrid_queries.extend(new_phrase_queries)  # Add new phrase queries
+            if current_length == 3:
+                hybrid_queries.extend(new_phrase_queries)
+            else:
+                del hybrid_queries[3:]
+                hybrid_queries.extend(new_phrase_queries)
         return params
 
 class NeuralMultimodalQueryParamSource(QueryParamSource):
     def get_dataset_name(self):
-        return 'abo'
+        return self._params.get("corpora_name", self._params.get("corpora", self._params.get("dataset", "abo")))
 
     def params(self):
         params = self._params
         vector_embedding_query = params['body']['query']['neural']['vector_embedding']
 
-        with open('model_id.json', 'r') as f:
+        model_id_file = "embedding_model_id.json" if os.path.exists("embedding_model_id.json") else "model_id.json"
+        with open(model_id_file, 'r') as f:
             d = json.loads(f.read())
         vector_embedding_query['model_id'] = d['model_id']
 
@@ -329,15 +306,10 @@ class NeuralMultimodalQueryParamSource(QueryParamSource):
         if count == 0:
             raise exceptions.DataError("variable-queries parameter for multimodal search cannot be 0.")
         if count > 0:
-            script_dir = os.path.dirname(os.path.realpath(__file__))
-            with open(script_dir + '/abo_queries.json', 'r') as f:
-                lines = f.read().splitlines()
-                line = random.choice(lines)
-                item = json.loads(line)
-                query_text = item['image_description']
-                query_image = item['image_binary']
-                vector_embedding_query['query_text'] = query_text
-                vector_embedding_query['query_image'] = query_image
+            item = self.get_random_query_obj()
+            if item:
+                vector_embedding_query['query_text'] = item.get('image_description', "")
+                vector_embedding_query['query_image'] = item.get('image_binary', "")
         return params
 
 class CreateIndexWithSemanticFieldParamSource:
@@ -370,4 +342,3 @@ def register(registry):
     registry.register_param_source("create-ingest-pipeline-source", ingest_pipeline_param_source)
     registry.register_param_source("create-rerank-search-pipeline-source", rerank_search_pipeline_param_source)
     registry.register_param_source("create-index-with-semantic-field-source", CreateIndexWithSemanticFieldParamSource)
-
