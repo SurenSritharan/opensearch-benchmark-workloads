@@ -9,7 +9,7 @@
   "operation-type": "put-settings",
   "body": {
     "persistent": {
-      "plugins.ml_commons.only_run_on_ml_node": "{{ only_run_on_ml_node | default('false') }}",
+      "plugins.ml_commons.only_run_on_ml_node": "{{ only_run_on_ml_node | default('true') }}",
       "plugins.ml_commons.native_memory_threshold": "{{ native_memory_threshold | default('99') }}",
       "plugins.ml_commons.allow_registering_model_via_url": "{{ allow_registering_model_via_url | default('true') }}",
       "plugins.ml_commons.trusted_connector_endpoints_regex": [
