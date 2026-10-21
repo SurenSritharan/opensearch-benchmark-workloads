@@ -17,9 +17,6 @@
   },
   "mappings": {
     "properties": {
-      "_id": {
-        "type": "keyword"
-      },
       "title": {
         "type": "text"
       },
