@@ -10,6 +10,11 @@ import numpy as np
 import pyarrow.parquet as pq
 from huggingface_hub import HfFileSystem, hf_hub_download
 
+try:  # OSB imports workloads as a package ("parquet.workload"); tests import it bare
+    from .relevance import RelevanceAccumulator, dedupe_preserving_order, ndcg_at_k, qrel_doc_id
+except ImportError:
+    from relevance import RelevanceAccumulator, dedupe_preserving_order, ndcg_at_k, qrel_doc_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,6 +45,38 @@ BENCHMARK_STATE = {
 }
 
 _DEFAULT_QUERIES_FILE = "parquet-vectors-gt-{target_count}.json"
+
+
+def _url_host(url) -> str:
+    """'https://www.example.com/a/b' -> 'example.com' (filter facet for MS MARCO)."""
+    host = str(url or "").split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def load_real_queries(path: str, emb_column: str, limit: int) -> list:
+    """Load real queries (text + embedding + optional qrels) from a local parquet file.
+
+    Expected columns: ``_id``, ``text``, ``<emb_column>``; ``qrels`` is optional and
+    holds ``[[doc_id, grade], ...]`` as in CohereLabs/msmarco-v2.1-embed-english-v3.
+    Queries with qrels come first so a ``num_queries`` cap keeps the judged ones.
+    """
+    cols = pq.read_schema(path).names
+    wanted = [c for c in ("_id", "text", emb_column, "qrels") if c in cols]
+    rows = pq.read_table(path, columns=wanted).to_pylist()
+    rows.sort(key=lambda r: not r.get("qrels"))
+    queries = []
+    for r in rows[:limit]:
+        vector = np.array(r[emb_column], dtype=np.float32)
+        norm = np.linalg.norm(vector)
+        if norm > 0:
+            vector /= norm
+        q = {"query_id": str(r["_id"]), "vector": vector.tolist(), "text": r.get("text", ""), "title": ""}
+        if r.get("qrels"):
+            q["qrels"] = {str(doc): int(grade) for doc, grade in r["qrels"]}
+        queries.append(q)
+    judged = sum(1 for q in queries if "qrels" in q)
+    logger.info(f"Loaded {len(queries):,} real queries from {path!r} ({judged:,} with qrels)")
+    return queries
 
 
 def _format_count(n: int) -> str:
@@ -117,6 +154,23 @@ class ParquetBulkParamReader:
             "datasets/CohereLabs/wikipedia-2023-11-embed-multilingual-v3/en",
         )
 
+        # Column mapping -- defaults match the Cohere wikipedia dataset. MS MARCO v2.1
+        # (CohereLabs/msmarco-v2.1-embed-english-v3) uses id_column=docid,
+        # text_column=segment and has url/headings as extra metadata.
+        self.id_column = params.get("id_column")         # None = auto-detect _id / id
+        self.text_column = params.get("text_column", "text")
+        self.title_column = params.get("title_column", "title")
+        self.extra_columns = list(params.get("extra_columns", []))
+        # Also store the source id as a keyword field, so hits can be mapped back to
+        # qrels without relying on _id (needs include_pid in the index body).
+        self.include_pid = params.get("include_pid", False)
+        # Derived keyword fields for filtering, e.g. {"domain": "url"} stores the
+        # host of the url column as "domain".
+        self.derived_fields = dict(params.get("derived_fields", {}))
+        # Real queries: a parquet file with text + embedding (+ optional qrels).
+        # When unset, queries are sampled from the corpus as before.
+        self.real_queries_file = params.get("real_queries_file")
+
         self._partition_index = 0
         self._total_partitions = 1
         self._generator = None  # created lazily after partition() is called
@@ -138,6 +192,13 @@ class ParquetBulkParamReader:
         p.fs = self.fs
         p.repo_id = self.repo_id
         p.dataset_dir = self.dataset_dir
+        p.id_column = self.id_column
+        p.text_column = self.text_column
+        p.title_column = self.title_column
+        p.extra_columns = self.extra_columns
+        p.include_pid = self.include_pid
+        p.derived_fields = self.derived_fields
+        p.real_queries_file = self.real_queries_file
         p._partition_index = partition_index
         p._total_partitions = total_partitions
         # Divide the total doc count evenly; last partition absorbs the remainder.
@@ -176,6 +237,15 @@ class ParquetBulkParamReader:
         p._cumulative = self._cumulative
         p._generator = p._stream_and_index()
         return p
+
+    def _resolve_id_column(self, available_columns) -> str:
+        if self.id_column:
+            if self.id_column not in available_columns:
+                raise ValueError(
+                    f"id_column {self.id_column!r} not in parquet schema {list(available_columns)}"
+                )
+            return self.id_column
+        return "_id" if "_id" in available_columns else "id"
 
     def _get_local_cached_path(self, remote_file_path: str) -> str:
         relative_path = "/".join(remote_file_path.split("/")[-2:])
@@ -269,15 +339,28 @@ class ParquetBulkParamReader:
         # Detect available columns from the first file (already cached locally).
         first_file_path = self._get_local_cached_path(remote_files[0])
         available_columns: Any = pq.read_schema(first_file_path).names
-        has_title = "title" in available_columns
-        has_text = "text" in available_columns
-        id_col = "_id" if "_id" in available_columns else "id"
+        title_col, text_col = self.title_column, self.text_column
+        has_title = title_col in available_columns
+        has_text = text_col in available_columns
+        id_col = self._resolve_id_column(available_columns)
+        extra_cols = [c for c in self.extra_columns if c in available_columns]
+        derived = {f: src for f, src in self.derived_fields.items() if src in available_columns}
+        read_cols = list(dict.fromkeys(extra_cols + list(derived.values())))
+        missing = sorted(set(self.extra_columns) - set(extra_cols))
+        if missing:
+            logger.warning(f"extra_columns not found in parquet schema, skipping: {missing}")
         columns = (
             [id_col]
-            + (["title"] if has_title else [])
-            + (["text"] if has_text else [])
+            + ([title_col] if has_title else [])
+            + ([text_col] if has_text else [])
+            + [c for c in read_cols if c not in (id_col, title_col, text_col)]
             + [self.field_name]
         )
+        # Real queries replace corpus-sampled ones; GT is still computed over the corpus.
+        if build_gt and self.real_queries_file:
+            BENCHMARK_STATE["sample_queries"].extend(
+                load_real_queries(self.real_queries_file, self.field_name, self.num_queries)
+            )
 
         # Find the first file that contains _start_doc.
         start_file_idx = 0
@@ -307,10 +390,10 @@ class ParquetBulkParamReader:
                 batch_size=self.batch_size, columns=columns
             ):
                 data = batch.to_pydict()
-                id_list = data.get("_id") or data.get("id")
+                id_list = data.get(id_col)
                 if id_list is None:
                     raise ValueError(
-                        f"Parquet file {remote_path!r} has neither '_id' nor 'id' column"
+                        f"Parquet file {remote_path!r} has no {id_col!r} column"
                     )
 
                 pending = []
@@ -320,13 +403,14 @@ class ParquetBulkParamReader:
                         break
 
                     doc_id = str(id_list[i])
-                    title = data["title"][i] if has_title else ""
-                    text = data["text"][i] if has_text else ""
+                    title = data[title_col][i] if has_title else ""
+                    text = data[text_col][i] if has_text else ""
                     raw_emb = data[self.field_name][i]
 
                     # Sample query vectors during ingest -- O(num_queries) RAM only.
                     # No large arrays; the full corpus is never held in memory.
-                    if build_gt and len(BENCHMARK_STATE["sample_queries"]) < self.num_queries:
+                    if (build_gt and not self.real_queries_file
+                            and len(BENCHMARK_STATE["sample_queries"]) < self.num_queries):
                         vector = np.array(raw_emb, dtype=np.float32)
                         norm = np.linalg.norm(vector)
                         if norm > 0:
@@ -346,10 +430,18 @@ class ParquetBulkParamReader:
                             {"index": {"_index": self.index_name, "_id": doc_id}}
                         )
                         doc_body = {self.field_name: raw_emb}
+                        # Index field names stay "title"/"text" whatever the source
+                        # column is called, so queries and mappings are dataset-agnostic.
                         if has_title:
                             doc_body["title"] = title
                         if has_text:
                             doc_body["text"] = text
+                        for col in extra_cols:
+                            doc_body[col] = data[col][i]
+                        for field, src in derived.items():
+                            doc_body[field] = _url_host(data[src][i])
+                        if self.include_pid:
+                            doc_body["pid"] = doc_id
                         pending.append(doc_body)
                         _indexed_docs += 1
 
@@ -474,7 +566,7 @@ class ParquetBulkParamReader:
         available_columns: Any = pq.read_schema(
             self._get_local_cached_path(remote_files[0])
         ).names
-        id_col = "_id" if "_id" in available_columns else "id"
+        id_col = self._resolve_id_column(available_columns)
 
         corpus_row_offset = 0  # absolute index of the next unprocessed corpus row
         batches_done = 0
@@ -628,15 +720,31 @@ class VectorSearchParamReader:
       bm25_weight       -- arithmetic-mean weight for the BM25 score  (default: 0.3)
       knn_weight        -- arithmetic-mean weight for the kNN score    (default: 0.7)
 
+    Other search modes
+    ------------------
+      bm25            -- multi_match on title + text only (the keyword leg on its own)
+      openrag-hybrid  -- the query OpenRAG sends (search_service.py): one bool/should
+                         with dis_max(knn)^0.7 + fuzzy multi_match^0.3 +
+                         match_phrase_prefix^0.25, raw scores, no search pipeline
+
+    Filters
+    -------
+    filter_body: an OpenSearch filter clause applied to every query. kNN gets it
+    inside the knn clause (efficient filtering); BM25 gets it as a bool filter.
+    Set filter_mode: "post" to send it as a top-level post_filter instead.
+
     Recall notes
     ------------
     Ground truth is computed by exact numpy nearest-neighbour search against
     the full indexed corpus.  For hybrid mode this means recall measures how
     closely the combined BM25+kNN ranking agrees with exact kNN -- useful as
-    a quality/tradeoff metric but not a true hybrid ground truth.
+    a quality/tradeoff metric but not a true hybrid ground truth. When the
+    queries carry qrels (real_queries_file), NDCG@10 against the qrels is also
+    computed and written to ndcg_summary_file (see relevance.py).
     """
 
     infinite = True  # cycles through queries indefinitely for time-period-based search
+    _SEARCH_MODES = ("vector", "hybrid", "bm25", "openrag-hybrid")
 
     def __init__(self, workload, params):
         self._params = params
@@ -650,6 +758,14 @@ class VectorSearchParamReader:
         self.search_mode = params.get("search_mode", "vector")   # "vector" | "hybrid"
         self.search_pipeline = params.get("search_pipeline", "hybrid-search-pipeline")
         self.hybrid_text_field = params.get("hybrid_text_field", "text")
+        if self.search_mode not in self._SEARCH_MODES:
+            raise ValueError(f"search_mode {self.search_mode!r} not in {self._SEARCH_MODES}")
+        self.filter_body = params.get("filter_body")
+        self.filter_mode = params.get("filter_mode", "efficient")   # "efficient" | "post"
+        # Hits must return the original dataset id (a stored field) for qrels lookup.
+        self.pid_field = params.get("pid_field", "pid")
+        self.qrel_id_separator = params.get("qrel_id_separator", "")
+        self.ndcg_summary_file = params.get("ndcg_summary_file")
         self._cursor = 0
         self._query_indices = None  # set by partition(); None means round-robin
 
@@ -674,6 +790,19 @@ class VectorSearchParamReader:
                 f"and {len(BENCHMARK_STATE['ground_truth'])} ground truth entries"
             )
 
+        self._relevance = None
+        judged = sum(1 for q in BENCHMARK_STATE["sample_queries"] if q.get("qrels"))
+        if judged:
+            summary = self.ndcg_summary_file or os.path.join(
+                os.path.dirname(os.path.abspath(params.get("queries_file", "."))),
+                f"ndcg-{self.index_name}-{self.search_mode}.json",
+            )
+            self._relevance = RelevanceAccumulator(summary, {
+                "index": self.index_name, "search_mode": self.search_mode,
+                "k": self.k, "filter": bool(self.filter_body), "judged_queries": judged,
+            })
+            logger.info(f"[relevance] {judged} judged queries; NDCG@10 summary -> {summary}")
+
     def partition(self, partition_index, total_partitions):
         """Return a copy that owns a strided slice of the query list."""
         p = VectorSearchParamReader.__new__(VectorSearchParamReader)
@@ -686,6 +815,12 @@ class VectorSearchParamReader:
         p.search_mode = self.search_mode
         p.search_pipeline = self.search_pipeline
         p.hybrid_text_field = self.hybrid_text_field
+        p.filter_body = self.filter_body
+        p.filter_mode = self.filter_mode
+        p.pid_field = self.pid_field
+        p.qrel_id_separator = self.qrel_id_separator
+        p.ndcg_summary_file = self.ndcg_summary_file
+        p._relevance = self._relevance
         queries = BENCHMARK_STATE["sample_queries"]
         p._query_indices = list(range(partition_index, len(queries), total_partitions))
         p._cursor = 0
@@ -704,10 +839,15 @@ class VectorSearchParamReader:
         self._cursor += 1
         query_item = queries[idx]
 
-        if self.search_mode == "hybrid":
-            query_payload = self._build_hybrid_query(query_item)
-        else:
-            query_payload = self._build_vector_query(query_item)
+        builders = {
+            "vector": self._build_vector_query,
+            "hybrid": self._build_hybrid_query,
+            "bm25": self._build_bm25_query,
+            "openrag-hybrid": self._build_openrag_query,
+        }
+        query_payload = builders[self.search_mode](query_item)
+        if self.filter_body and self.filter_mode == "post":
+            query_payload["post_filter"] = self.filter_body
 
         if self._cursor == 1:
             logger.info(
@@ -733,50 +873,76 @@ class VectorSearchParamReader:
             "detailed-results": self._params.get("detailed-results", True),
         }
         if self.search_mode == "hybrid":
-            result["search_pipeline"] = self.search_pipeline
+            # OSB's search runner never forwards a "search_pipeline" key; it has to
+            # go in request-params or the hybrid query runs without normalization.
+            result["request-params"] = {"search_pipeline": self.search_pipeline}
+        if self._relevance is not None and query_item.get("qrels"):
+            result["relevance"] = {
+                "accumulator": self._relevance,
+                "query_id": query_item["query_id"],
+                "qrels": query_item["qrels"],
+                "pid_field": self.pid_field,
+                "separator": self.qrel_id_separator,
+            }
         return result
+
+    def _knn_clause(self, query_item, with_filter=True):
+        knn_clause = {
+            "vector": query_item["vector"],
+            "k": self.k,
+        }
+        if self.ef_search:
+            knn_clause["method_parameters"] = {"ef_search": self.ef_search}
+        if with_filter and self.filter_body and self.filter_mode == "efficient":
+            knn_clause["filter"] = self.filter_body
+        return {"knn": {self.field_name: knn_clause}}
+
+    def _with_filter(self, query):
+        if self.filter_body and self.filter_mode == "efficient":
+            return {"bool": {"must": [query], "filter": [self.filter_body]}}
+        return query
+
+    def _query_text(self, query_item):
+        return query_item.get("text") or query_item.get("title", "")
+
+    def _body(self, query):
+        return {"size": self.k, "_source": [self.pid_field], "query": query}
 
     def _build_vector_query(self, query_item):
         """Pure kNN query."""
-        knn_clause = {
-            "vector": query_item["vector"],
-            "k": self.k,
-        }
-        if self.ef_search:
-            knn_clause["method_parameters"] = {"ef_search": self.ef_search}
-        body = {
-            "size": self.k,
-            "query": {"knn": {self.field_name: knn_clause}},
-        }
-        return body
+        return self._body(self._knn_clause(query_item))
+
+    def _build_bm25_query(self, query_item):
+        """BM25 only -- the keyword leg of hybrid on its own."""
+        match = {"multi_match": {"query": self._query_text(query_item), "fields": ["title", "text"]}}
+        return self._body(self._with_filter(match))
 
     def _build_hybrid_query(self, query_item):
         """Hybrid BM25 + kNN query routed through a normalization search pipeline."""
-        query_text = query_item.get("text", query_item.get("title", ""))
-        knn_clause = {
-            "vector": query_item["vector"],
-            "k": self.k,
-        }
-        if self.ef_search:
-            knn_clause["method_parameters"] = {"ef_search": self.ef_search}
-        body = {
-            "size": self.k,
-            "query": {
-                "hybrid": {
-                    "queries": [
-                        {
-                            "match": {
-                                self.hybrid_text_field: {
-                                    "query": query_text
-                                }
-                            }
-                        },
-                        {"knn": {self.field_name: knn_clause}},
-                    ]
-                }
-            },
-        }
-        return body
+        match = {"match": {self.hybrid_text_field: {"query": self._query_text(query_item)}}}
+        return self._body({"hybrid": {"queries": [
+            self._with_filter(match),
+            self._knn_clause(query_item),
+        ]}})
+
+    def _build_openrag_query(self, query_item):
+        """OpenRAG's retrieval query (openrag/src/services/search_service.py): raw
+        boosts, no normalization, filters in bool.filter."""
+        text = self._query_text(query_item)
+        query = {"bool": {
+            "should": [
+                {"dis_max": {"tie_breaker": 0.0, "boost": 0.7,
+                             "queries": [self._knn_clause(query_item, with_filter=False)]}},
+                {"multi_match": {"query": text, "fields": ["text^2", "title^1.5"],
+                                 "type": "best_fields", "operator": "or",
+                                 "fuzziness": "AUTO:4,7", "boost": 0.3}},
+                {"match_phrase_prefix": {"text": {"query": text, "max_expansions": 50, "boost": 0.25}}},
+            ],
+            "minimum_should_match": 1,
+        }}
+        if self.filter_body and self.filter_mode == "efficient":
+            query["bool"]["filter"] = [self.filter_body]
+        return self._body(query)
 
 
 # ============================================================================
@@ -785,6 +951,11 @@ class VectorSearchParamReader:
 
 
 def register(registry):
+    try:
+        from .runners import register as register_runners
+    except ImportError:
+        from runners import register as register_runners
+    register_runners(registry)
     registry.register_param_source(
         "parquet-bulk-reader", ParquetBulkParamReader
     )
