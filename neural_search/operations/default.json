@@ -137,6 +137,18 @@
   "target": "reranker_model_id.json"
 },
 {
+  "name": "set-embedding-model-id-from-param",
+  "operation-type": "save-model-id-from-param",
+  "model-id": "{{ embedding_model_id }}",
+  "target": "embedding_model_id.json"
+},
+{
+  "name": "set-reranker-model-id-from-param",
+  "operation-type": "save-model-id-from-param",
+  "model-id": "{{ reranker_model_id }}",
+  "target": "reranker_model_id.json"
+},
+{
   "name": "create-rerank-search-pipeline",
   "operation-type": "create-search-pipeline",
   "param-source": "create-rerank-search-pipeline-source",

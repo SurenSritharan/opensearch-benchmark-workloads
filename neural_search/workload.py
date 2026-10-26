@@ -89,6 +89,25 @@ class SaveModelId:
     def __repr__(self, *args, **kwargs):
         return "save-model-id"
 
+
+class SaveModelIdFromParam:
+    """
+    Writes a caller-supplied model_id directly to the target file so that
+    subsequent steps (ingest-pipeline creation, query param sources) can
+    read it without going through register / deploy.
+    """
+    async def __call__(self, opensearch, params):
+        model_id = params.get("model-id")
+        if not model_id:
+            raise ValueError("save-model-id-from-param requires a 'model-id' parameter")
+        target = params.get("target", "embedding_model_id.json")
+        with open(target, "w") as f:
+            json.dump({"model_id": model_id}, f)
+        return {"weight": 1, "unit": "ops", "success": True}
+
+    def __repr__(self, *args, **kwargs):
+        return "save-model-id-from-param"
+
 class QueryParamSource:
     def __init__(self, workload, params, **kwargs):
         if len(workload.indices) == 1:
@@ -334,6 +353,7 @@ class CreateIndexWithSemanticFieldParamSource:
 
 def register(registry):
     registry.register_runner("save-model-id", SaveModelId(), async_runner=True)
+    registry.register_runner("save-model-id-from-param", SaveModelIdFromParam(), async_runner=True)
     registry.register_param_source("neural-search-source", NeuralQueryParamSource)
     registry.register_param_source("neural-hybrid-search-source", NeuralHybridQueryParamSource)
     registry.register_param_source("neural-hybrid-search-bool-source", NeuralHybridQueryBoolParamSource)
