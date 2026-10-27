@@ -9,6 +9,7 @@ Registered under its own operation type so the stock "vector-search" runner is
 left untouched for every other workload.
 """
 
+import contextvars
 import json
 import logging
 
@@ -27,6 +28,17 @@ OPERATION_TYPE = "vector-search-ndcg"
 class VectorSearchWithNdcg(Query):
     """``vector-search`` plus NDCG@10 against qrels when the query has them."""
 
+    def __init__(self):
+        super().__init__()
+        self._captured_response = contextvars.ContextVar("ndcg_captured_response", default=None)
+
+    async def _raw_search(self, *args, **kwargs):
+        response = await super()._raw_search(*args, **kwargs)
+        captured = self._captured_response.get()
+        if captured is not None:
+            captured["body"] = response.getvalue()
+        return response
+
     async def __call__(self, opensearch, params):
         relevance = params.pop("relevance", None)
         params["operation-type"] = "vector-search"  # dispatch to the recall path
@@ -34,18 +46,11 @@ class VectorSearchWithNdcg(Query):
             return await super().__call__(opensearch, params)
 
         captured = {}
-        original = self._raw_search
-
-        async def capturing_raw_search(*args, **kwargs):
-            response = await original(*args, **kwargs)
-            captured["body"] = response.getvalue()
-            return response
-
-        self._raw_search = capturing_raw_search
+        token = self._captured_response.set(captured)
         try:
             result = await super().__call__(opensearch, params)
         finally:
-            self._raw_search = original
+            self._captured_response.reset(token)
 
         if "body" in captured:
             hits = json.loads(captured["body"]).get("hits", {}).get("hits", [])
