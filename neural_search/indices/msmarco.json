@@ -29,7 +29,7 @@
         "type": "rank_features"
         {%- else %}
         "type": "knn_vector",
-        "dimension": {{dimensions | default(384)}},
+        "dimension": {{dimensions | default(1024)}},
         "method": {
           "engine": "{{engine | default('lucene')}}",
           "space_type": "{{space_type | default('l2')}}",

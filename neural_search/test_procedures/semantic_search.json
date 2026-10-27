@@ -9,11 +9,6 @@
     {
       "operation": "delete-ingest-pipeline"
     },
-    {%- if embedding_model_id is not defined %}
-    {
-      "operation": "delete-ml-model-sentence-transformer"
-    },
-    {%- endif %}
     {
       "operation": "put-cluster-settings"
     },
@@ -22,22 +17,9 @@
       "operation": "put-concurrent-segment-search-setting"
     },
     {%- endif %}
-    {%- if embedding_model_id is defined %}
     {
       "operation": "set-embedding-model-id-from-param"
     },
-    {%- else %}
-    {
-      "operation": "register-ml-model-sentence-transformer"
-    },
-    {
-      "name": "deploy-embedding-model",
-      "operation": "deploy-ml-model"
-    },
-    {
-      "operation": "save-embedding-model-id"
-    },
-    {%- endif %}
     {
       "operation": "create-text-embedding-processor-ingest-pipeline"
     },
@@ -63,30 +45,12 @@
     {
       "operation": "delete-ingest-pipeline"
     },
-    {%- if embedding_model_id is not defined %}
-    {
-      "operation": "delete-ml-model-sentence-transformer"
-    },
-    {%- endif %}
     {
       "operation": "put-cluster-settings"
     },
-    {%- if embedding_model_id is defined %}
     {
       "operation": "set-embedding-model-id-from-param"
     },
-    {%- else %}
-    {
-      "operation": "register-ml-model-sentence-transformer"
-    },
-    {
-      "name": "deploy-embedding-model",
-      "operation": "deploy-ml-model"
-    },
-    {
-      "operation": "save-embedding-model-id"
-    },
-    {%- endif %}
     {
       "operation": "create-text-embedding-processor-ingest-pipeline"
     },
@@ -126,11 +90,6 @@
     {
       "operation": "delete-rerank-search-pipeline"
     },
-    {%- if embedding_model_id is not defined %}
-    {
-      "operation": "delete-ml-model-sentence-transformer"
-    },
-    {%- endif %}
     {%- if reranker_model_id is not defined %}
     {
       "operation": "delete-ml-model-reranker"
@@ -144,22 +103,9 @@
       "operation": "put-concurrent-segment-search-setting"
     },
     {%- endif %}
-    {%- if embedding_model_id is defined %}
     {
       "operation": "set-embedding-model-id-from-param"
     },
-    {%- else %}
-    {
-      "operation": "register-ml-model-sentence-transformer"
-    },
-    {
-      "name": "deploy-embedding-model",
-      "operation": "deploy-ml-model"
-    },
-    {
-      "operation": "save-embedding-model-id"
-    },
-    {%- endif %}
     {
       "operation": "create-text-embedding-processor-ingest-pipeline"
     },
@@ -207,11 +153,6 @@
     {
       "operation": "delete-rerank-search-pipeline"
     },
-    {%- if embedding_model_id is not defined %}
-    {
-      "operation": "delete-ml-model-sentence-transformer"
-    },
-    {%- endif %}
     {%- if reranker_model_id is not defined %}
     {
       "operation": "delete-ml-model-reranker"
@@ -220,22 +161,9 @@
     {
       "operation": "put-cluster-settings"
     },
-    {%- if embedding_model_id is defined %}
     {
       "operation": "set-embedding-model-id-from-param"
     },
-    {%- else %}
-    {
-      "operation": "register-ml-model-sentence-transformer"
-    },
-    {
-      "name": "deploy-embedding-model",
-      "operation": "deploy-ml-model"
-    },
-    {
-      "operation": "save-embedding-model-id"
-    },
-    {%- endif %}
     {
       "operation": "create-text-embedding-processor-ingest-pipeline"
     },

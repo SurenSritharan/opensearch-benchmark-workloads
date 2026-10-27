@@ -139,7 +139,7 @@
 {
   "name": "set-embedding-model-id-from-param",
   "operation-type": "save-model-id-from-param",
-  "model-id": "{{ embedding_model_id }}",
+  "model-id": "y_qed6EBJhlbMFgiwBwa",
   "target": "embedding_model_id.json"
 },
 {
